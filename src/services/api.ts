@@ -13,8 +13,7 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
  * Ejemplo:
  * const API_BASE_URL = "http://192.168.100.198:3000/api";
  */
-const API_BASE_URL = "http://localhost:3000/api";
-
+const API_BASE_URL = "http://192.168.100.198:3000/api";
 /**
  * API principal con RTK Query.
  *

@@ -5,12 +5,12 @@ import { Stack } from "expo-router";
 import { Provider } from "react-redux";
 
 /**
- * Layout raíz de la aplicación.
+ * Layout raíz de la app.
  *
- * Aquí conectamos:
- * - NativeWind/Tailwind mediante global.css
- * - Redux mediante Provider
- * - Expo Router mediante Stack
+ * Beneficio:
+ * - Carga Tailwind/NativeWind con global.css.
+ * - Hace que Redux esté disponible en toda la app.
+ * - Configura navegación principal con Expo Router.
  */
 export default function RootLayout() {
   return (

@@ -1,24 +1,121 @@
-import { Text, View } from "react-native";
+import { setCredentials } from "@/src/features/auth/auth.slice";
+import { useLoginMutation } from "@/src/services/authApi";
+import { useAppDispatch } from "@/src/store/hooks";
+import { saveToken } from "@/src/utils/tokenStorage";
+import { router } from "expo-router";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 /**
- * Pantalla temporal para probar NativeWind.
+ * Pantalla de login.
  *
- * Sirve para confirmar que className funciona antes
- * de construir el login completo.
+ * Beneficio:
+ * - Conecta el móvil con POST /api/auth/login.
+ * - Guarda token en Redux y SecureStore.
+ * - Redirige al dashboard si el login es correcto.
  */
 export default function LoginScreen() {
+  const dispatch = useAppDispatch();
+
+  const [email, setEmail] = useState("admin@test.com");
+  const [password, setPassword] = useState("admin123");
+
+  const [login, { isLoading }] = useLoginMutation();
+
+  async function handleLogin() {
+    try {
+      if (!email.trim() || !password.trim()) {
+        Alert.alert("Campos requeridos", "Ingresa correo y contraseña.");
+        return;
+      }
+
+      const response = await login({
+        email: email.trim().toLowerCase(),
+        password,
+      }).unwrap();
+
+      dispatch(
+        setCredentials({
+          token: response.data.token,
+          user: response.data.user,
+        }),
+      );
+
+      await saveToken(response.data.token);
+
+      router.replace("/(tabs)");
+    } catch (error) {
+      console.error("LOGIN_ERROR:", error);
+
+      Alert.alert(
+        "Error al iniciar sesión",
+        "Revisa tus credenciales o que el backend esté encendido.",
+      );
+    }
+  }
+
   return (
-    <View className="flex-1 items-center justify-center bg-white px-6">
-      <Text className="text-3xl font-bold text-blue-600">Sales Control</Text>
-
-      <Text className="mt-2 text-center text-base text-gray-500">
-        NativeWind funcionando correctamente
-      </Text>
-
-      <View className="mt-6 rounded-xl bg-gray-100 px-5 py-4">
-        <Text className="font-semibold text-gray-800">
-          Ya podemos diseñar con Tailwind
+    <View className="flex-1 justify-center bg-slate-950 px-6">
+      <View className="mb-10">
+        <Text className="text-4xl font-extrabold text-white">
+          Sales Control
         </Text>
+
+        <Text className="mt-2 text-base text-slate-400">
+          Inicia sesión para administrar ventas, clientes y pedidos.
+        </Text>
+      </View>
+
+      <View className="rounded-3xl bg-white p-6">
+        <Text className="mb-1 text-sm font-semibold text-slate-700">
+          Correo
+        </Text>
+
+        <TextInput
+          className="mb-4 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900"
+          placeholder="admin@test.com"
+          placeholderTextColor="#94a3b8"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+
+        <Text className="mb-1 text-sm font-semibold text-slate-700">
+          Contraseña
+        </Text>
+
+        <TextInput
+          className="mb-6 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900"
+          placeholder="admin123"
+          placeholderTextColor="#94a3b8"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
+
+        <Pressable
+          className={`rounded-xl py-4 ${
+            isLoading ? "bg-slate-500" : "bg-slate-950"
+          }`}
+          onPress={handleLogin}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text className="text-center text-base font-bold text-white">
+              Entrar
+            </Text>
+          )}
+        </Pressable>
       </View>
     </View>
   );
