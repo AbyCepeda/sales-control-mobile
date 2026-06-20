@@ -17,9 +17,10 @@ import {
  * Pantalla de login.
  *
  * Beneficio:
- * - Conecta el móvil con POST /api/auth/login.
- * - Guarda token en Redux y SecureStore.
- * - Redirige al dashboard si el login es correcto.
+ * - Conecta el móvil/web con POST /api/auth/login.
+ * - Guarda el token en Redux.
+ * - Guarda el token en storage para mantener sesión.
+ * - Redirige al dashboard cuando el login es correcto.
  */
 export default function LoginScreen() {
   const dispatch = useAppDispatch();
@@ -41,22 +42,26 @@ export default function LoginScreen() {
         password,
       }).unwrap();
 
+      const token = response.data.token;
+      const user = response.data.user;
+
+      await saveToken(token);
+
       dispatch(
         setCredentials({
-          token: response.data.token,
-          user: response.data.user,
+          token,
+          user,
         }),
       );
 
-      await saveToken(response.data.token);
-
       router.replace("/(tabs)");
-    } catch (error) {
-      console.error("LOGIN_ERROR:", error);
+    } catch (error: any) {
+      console.error("LOGIN_ERROR:", JSON.stringify(error, null, 2));
 
       Alert.alert(
         "Error al iniciar sesión",
-        "Revisa tus credenciales o que el backend esté encendido.",
+        error?.data?.message ??
+          "Revisa tus credenciales o que el backend esté encendido.",
       );
     }
   }
@@ -102,7 +107,7 @@ export default function LoginScreen() {
         />
 
         <Pressable
-          className={`rounded-xl py-4 ${
+          className={`rounded-xl py-4 active:opacity-80 ${
             isLoading ? "bg-slate-500" : "bg-slate-950"
           }`}
           onPress={handleLogin}

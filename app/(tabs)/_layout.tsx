@@ -1,38 +1,58 @@
 import { Tabs } from "expo-router";
-import React from "react";
 
-import { HapticTab } from "@/components/haptic-tab";
-import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Colors } from "@/constants/theme";
-import { useColorScheme } from "@/hooks/use-color-scheme";
-
+/**
+ * Layout de tabs principales.
+ *
+ * Beneficio:
+ * - Define las pantallas visibles en la navegación inferior.
+ * - Elimina la tab "explore" que venía en la plantilla de Expo.
+ * - Deja navegación clara para Dashboard, Productos, Clientes y Pedidos.
+ */
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
         headerShown: false,
-        tabBarButton: HapticTab,
+        tabBarActiveTintColor: "#020617",
+        tabBarInactiveTintColor: "#64748b",
+        tabBarStyle: {
+          backgroundColor: "#ffffff",
+          borderTopColor: "#e2e8f0",
+          height: 64,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: "700",
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
-          ),
+          title: "Inicio",
         }}
       />
+
       <Tabs.Screen
-        name="explore"
+        name="products"
         options={{
-          title: "Explore",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="paperplane.fill" color={color} />
-          ),
+          title: "Productos",
+        }}
+      />
+
+      <Tabs.Screen
+        name="customers"
+        options={{
+          title: "Clientes",
+        }}
+      />
+
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: "Pedidos",
         }}
       />
     </Tabs>
