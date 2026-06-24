@@ -1,18 +1,18 @@
 import { logout } from "@/src/features/auth/auth.slice";
 import type {
-    DashboardRecentOrder,
-    OrderStatus,
+  DashboardRecentOrder,
+  OrderStatus,
 } from "@/src/features/dashboard/dashboard.types";
 import { useGetDashboardQuery } from "@/src/services/dashboardApi";
 import { useAppDispatch, useAppSelector } from "@/src/store/hooks";
 import { removeToken } from "@/src/utils/tokenStorage";
 import { router } from "expo-router";
 import {
-    ActivityIndicator,
-    Pressable,
-    ScrollView,
-    Text,
-    View,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
 } from "react-native";
 
 /**
@@ -301,7 +301,8 @@ export default function DashboardScreen() {
                           </Text>
 
                           <Text className="mt-1 text-sm text-slate-500">
-                            {order.customer.name}
+                            {order.customerOrders?.[0]?.customer?.name ??
+                              "Sin cliente"}
                           </Text>
                         </View>
 
