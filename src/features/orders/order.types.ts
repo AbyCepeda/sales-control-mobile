@@ -6,22 +6,26 @@
 export type OrderStatus = "PENDING" | "PAID" | "DELIVERED" | "CANCELLED";
 
 /**
- * Cliente relacionado al pedido.
+ * Cliente relacionado a un pedido.
+ *
+ * Nueva lógica:
+ * - El cliente puede crearse automáticamente desde la pantalla de pedidos.
  *
  * Beneficio:
- * - Permite mostrar quién hizo el pedido sin hacer otra petición.
+ * - El vendedor no necesita registrar clientes antes.
  */
 export type OrderCustomer = {
   id: number;
   name: string;
   phone: string | null;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 /**
  * Vendedor que registró el pedido.
- *
- * Beneficio:
- * - Permite saber quién capturó la venta.
  */
 export type OrderSeller = {
   id: number;
@@ -34,8 +38,8 @@ export type OrderSeller = {
  * Producto relacionado al item.
  *
  * Importante:
- * - El producto puede actualizarse después.
- * - Los datos históricos reales viven en los snapshots del item.
+ * - El producto se crea o actualiza automáticamente por SKU.
+ * - El pedido conserva snapshots históricos.
  */
 export type OrderProduct = {
   id: number;
@@ -50,18 +54,14 @@ export type OrderProduct = {
 };
 
 /**
- * Item dentro de un pedido.
- *
- * Nueva lógica:
- * - Usamos snapshots para conservar cómo se vendió el artículo.
+ * Item comprado por un cliente dentro de un pedido.
  *
  * Beneficio:
- * - Si después cambia el producto, el pedido conserva el nombre,
- *   descripción, SKU y precio originales.
+ * - Conserva el precio, nombre y SKU originales aunque el producto cambie después.
  */
 export type OrderItem = {
   id: number;
-  orderId: number;
+  customerOrderId: number;
   productId: number | null;
 
   skuSnapshot: string;
@@ -76,29 +76,52 @@ export type OrderItem = {
 };
 
 /**
- * Pedido completo recibido desde el backend.
+ * Cliente dentro de un pedido general.
+ *
+ * Ejemplo:
+ * Pedido #1
+ * - Cliente María
+ *   - Perfume
+ *   - Crema
+ * - Cliente Juan
+ *   - Shampoo
  */
-export type Order = {
+export type CustomerOrder = {
   id: number;
+  orderId: number;
   customerId: number;
-  sellerId: number;
   total: string;
-  status: OrderStatus;
-  deliveryDate: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
 
   customer: OrderCustomer;
-  seller: OrderSeller;
   items: OrderItem[];
+};
+
+/**
+ * Pedido general recibido desde backend.
+ */
+export type Order = {
+  id: number;
+  sellerId: number;
+  total: string;
+  status: OrderStatus;
+  purchaseDate: string;
+  deliveryDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+
+  seller: OrderSeller;
+  customerOrders: CustomerOrder[];
 };
 
 /**
  * Artículo que se manda al backend al crear pedido.
  *
  * Nueva lógica:
- * - Ya no mandamos productId.
+ * - No mandamos productId.
  * - Mandamos SKU, nombre, descripción, cantidad y precio.
  */
 export type CreateOrderItemRequest = {
@@ -110,14 +133,57 @@ export type CreateOrderItemRequest = {
 };
 
 /**
- * Body para crear un pedido por cliente.
+ * Cliente capturado manualmente dentro del pedido.
+ *
+ * Nueva lógica:
+ * - Ya no mandamos customerId.
+ * - Mandamos name, phone y notes.
+ * - El backend crea o reutiliza cliente por teléfono.
+ */
+export type CreateOrderCustomerRequest = {
+  name: string;
+  phone?: string | null;
+  notes?: string | null;
+  items: CreateOrderItemRequest[];
+};
+
+/**
+ * Body para crear pedido general.
  *
  * Endpoint:
- * POST /api/customers/:customerId/orders
+ * POST /api/orders
  */
-export type CreateCustomerOrderRequest = {
-  customerId: number;
-  items: CreateOrderItemRequest[];
+export type CreateOrderRequest = {
   deliveryDate?: string | null;
   notes?: string | null;
+  customers: CreateOrderCustomerRequest[];
+};
+
+/**
+ * Body para actualizar pedido.
+ *
+ * Endpoint:
+ * PUT /api/orders/:id
+ */
+export type UpdateOrderRequest = {
+  status?: OrderStatus;
+  deliveryDate?: string | null;
+  notes?: string | null;
+};
+
+/**
+ * Body para editar un pedido completo.
+ *
+ * Para qué sirve:
+ * - Permite editar notas, estado, clientes y artículos.
+ *
+ * Beneficio:
+ * - Podemos agregar clientes/artículos después de crear el pedido.
+ * - El backend recalcula los totales.
+ */
+export type UpdateFullOrderRequest = {
+  status?: OrderStatus;
+  deliveryDate?: string | null;
+  notes?: string | null;
+  customers: CreateOrderCustomerRequest[];
 };
