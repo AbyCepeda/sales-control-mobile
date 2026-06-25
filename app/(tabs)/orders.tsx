@@ -1,8 +1,7 @@
-import { OrderStatusSelector } from "@/src/components/orders/OrderStatusSelector";
+import { OrderSummaryCard } from "@/src/components/orders/OrderSummaryCard";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppCard } from "@/src/components/ui/AppCard";
 import { AppInput } from "@/src/components/ui/AppInput";
-import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import type {
   CreateOrderCustomerRequest,
   CreateOrderItemRequest,
@@ -13,7 +12,6 @@ import {
   useGetOrdersQuery,
   useUpdateOrderMutation,
 } from "@/src/services/ordersApi";
-import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 
@@ -34,7 +32,7 @@ type DraftOrderItem = CreateOrderItemRequest & {
  * Cliente temporal capturado dentro del pedido.
  *
  * Para qué sirve:
- * - Guardar temporalmente los datos del cliente antes de crear el pedido.
+ * - Guarda temporalmente los datos del cliente antes de crear el pedido.
  *
  * Beneficio:
  * - No dependemos de una lista de clientes existentes.
@@ -450,7 +448,7 @@ export default function OrdersScreen() {
         customers: customersPayload,
       };
 
-      //console.log("CREATE_ORDER_PAYLOAD:", JSON.stringify(payload, null, 2));
+      console.log("CREATE_ORDER_PAYLOAD:", JSON.stringify(payload, null, 2));
 
       await createOrder(payload).unwrap();
 
@@ -460,7 +458,7 @@ export default function OrdersScreen() {
 
       Alert.alert("Pedido creado", "El pedido se guardó correctamente.");
     } catch (error: any) {
-      //console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
+      console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
 
       Alert.alert(
         "Error al crear pedido",
@@ -822,94 +820,12 @@ export default function OrdersScreen() {
                   isUpdatingOrder && updatingOrderId === order.id;
 
                 return (
-                  <AppCard key={order.id}>
-                    <View className="flex-row items-start justify-between gap-3">
-                      <View className="flex-1">
-                        <Text className="text-xl font-extrabold text-slate-950">
-                          Pedido #{order.id}
-                        </Text>
-
-                        <Text className="mt-1 text-sm text-slate-500">
-                          Clientes: {order.customerOrders.length}
-                        </Text>
-
-                        <View className="mt-2">
-                          <StatusBadge status={order.status} />
-                        </View>
-                      </View>
-
-                      <Text className="text-lg font-extrabold text-emerald-700">
-                        ${Number(order.total).toFixed(2)}
-                      </Text>
-                    </View>
-
-                    <AppButton
-                      title="Ver / Editar"
-                      className="mt-4"
-                      onPress={() =>
-                        router.push({
-                          pathname: "/orders/[id]" as any,
-                          params: {
-                            id: String(order.id),
-                          },
-                        })
-                      }
-                    />
-
-                    <View className="mt-4 rounded-2xl bg-slate-50 p-4">
-                      <OrderStatusSelector
-                        label="Cambiar estado rápido"
-                        value={order.status}
-                        disabled={isThisOrderUpdating}
-                        onChange={(statusValue) =>
-                          handleUpdateOrderStatus(order.id, statusValue)
-                        }
-                      />
-
-                      {isThisOrderUpdating ? (
-                        <Text className="mt-3 text-xs text-slate-500">
-                          Actualizando estado...
-                        </Text>
-                      ) : null}
-                    </View>
-
-                    <View className="mt-4 gap-3">
-                      {order.customerOrders.map((customerOrder) => {
-                        const paidItemsCount = customerOrder.items.filter(
-                          (item) => item.isPaid,
-                        ).length;
-
-                        return (
-                          <View
-                            key={customerOrder.id}
-                            className="rounded-xl bg-slate-50 p-4"
-                          >
-                            <Text className="font-extrabold text-slate-950">
-                              {customerOrder.customer.name}
-                            </Text>
-
-                            <Text className="mt-1 text-sm text-slate-500">
-                              {customerOrder.customer.phone ?? "Sin teléfono"}
-                            </Text>
-
-                            <Text className="mt-1 text-sm text-slate-500">
-                              Artículos: {customerOrder.items.length}
-                            </Text>
-
-                            <Text className="mt-1 text-sm font-bold text-emerald-700">
-                              Pagados: {paidItemsCount}/
-                              {customerOrder.items.length}
-                            </Text>
-
-                            <Text className="mt-1 text-sm font-bold text-slate-700">
-                              Total cliente: $
-                              {Number(customerOrder.total).toFixed(2)}
-                            </Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </AppCard>
+                  <OrderSummaryCard
+                    key={order.id}
+                    order={order}
+                    isUpdating={isThisOrderUpdating}
+                    onUpdateStatus={handleUpdateOrderStatus}
+                  />
                 );
               })
             ) : (
