@@ -56,8 +56,12 @@ export type OrderProduct = {
 /**
  * Item comprado por un cliente dentro de un pedido.
  *
+ * Para qué sirve:
+ * - Representa un artículo ya guardado en backend.
+ *
  * Beneficio:
  * - Conserva el precio, nombre y SKU originales aunque el producto cambie después.
+ * - Ahora también indica si ese artículo individual ya fue pagado.
  */
 export type OrderItem = {
   id: number;
@@ -71,6 +75,7 @@ export type OrderItem = {
 
   quantity: number;
   subtotal: string;
+  isPaid: boolean;
 
   product: OrderProduct | null;
 };
@@ -118,11 +123,12 @@ export type Order = {
 };
 
 /**
- * Artículo que se manda al backend al crear pedido.
+ * Artículo que se manda al backend al crear o editar pedido.
  *
  * Nueva lógica:
  * - No mandamos productId.
  * - Mandamos SKU, nombre, descripción, cantidad y precio.
+ * - También mandamos isPaid para guardar pago individual por artículo.
  */
 export type CreateOrderItemRequest = {
   sku: string;
@@ -130,6 +136,17 @@ export type CreateOrderItemRequest = {
   description?: string | null;
   quantity: number;
   unitPrice: number;
+
+  /**
+   * Indica si el artículo ya fue pagado.
+   *
+   * Para qué sirve:
+   * - Permite marcar un artículo como pagado desde el formulario.
+   *
+   * Beneficio:
+   * - No obliga a marcar todo el pedido como pagado.
+   */
+  isPaid?: boolean;
 };
 
 /**

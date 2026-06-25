@@ -1,3 +1,7 @@
+import { OrderStatusSelector } from "@/src/components/orders/OrderStatusSelector";
+import { AppButton } from "@/src/components/ui/AppButton";
+import { AppCard } from "@/src/components/ui/AppCard";
+import { AppInput } from "@/src/components/ui/AppInput";
 import type {
   CreateOrderCustomerRequest,
   CreateOrderItemRequest,
@@ -9,20 +13,30 @@ import {
 } from "@/src/services/ordersApi";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 
+/**
+ * Artículo temporal usado solo en pantalla.
+ *
+ * Para qué sirve:
+ * - Permite editar artículos antes de guardar el pedido.
+ *
+ * Beneficio:
+ * - El backend no se modifica hasta que el usuario presiona "Guardar cambios".
+ */
 type DraftOrderItem = CreateOrderItemRequest & {
   localId: string;
 };
 
+/**
+ * Cliente temporal dentro del formulario.
+ *
+ * Para qué sirve:
+ * - Permite editar cliente, teléfono, notas y artículos.
+ *
+ * Beneficio:
+ * - Podemos reconstruir el pedido completo antes de enviarlo al backend.
+ */
 type DraftCustomerOrder = {
   localId: string;
   name: string;
@@ -31,20 +45,28 @@ type DraftCustomerOrder = {
   items: DraftOrderItem[];
 };
 
-const orderStatusOptions: {
-  label: string;
-  value: OrderStatus;
-}[] = [
-  { label: "Pendiente", value: "PENDING" },
-  { label: "Pagado", value: "PAID" },
-  { label: "Entregado", value: "DELIVERED" },
-  { label: "Cancelado", value: "CANCELLED" },
-];
-
+/**
+ * Genera un ID local para listas temporales.
+ *
+ * Para qué sirve:
+ * - React necesita una key estable cuando renderizamos listas.
+ *
+ * Beneficio:
+ * - Evita errores visuales al agregar o quitar clientes/artículos.
+ */
 function createLocalId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/**
+ * Convierte texto a número de forma segura.
+ *
+ * Para qué sirve:
+ * - Los inputs de React Native trabajan con strings.
+ *
+ * Beneficio:
+ * - Evitamos mandar NaN al backend.
+ */
 function parseNumber(value: string) {
   const parsed = Number(value);
 
@@ -55,6 +77,15 @@ function parseNumber(value: string) {
   return parsed;
 }
 
+/**
+ * Crea un artículo vacío.
+ *
+ * Para qué sirve:
+ * - Inicializa un artículo nuevo dentro del formulario de edición.
+ *
+ * Beneficio:
+ * - Todo artículo nuevo inicia como pendiente de pago.
+ */
 function createEmptyItem(): DraftOrderItem {
   return {
     localId: createLocalId(),
@@ -63,9 +94,19 @@ function createEmptyItem(): DraftOrderItem {
     description: "",
     quantity: 1,
     unitPrice: 0,
+    isPaid: false,
   };
 }
 
+/**
+ * Crea un cliente vacío con un artículo inicial.
+ *
+ * Para qué sirve:
+ * - Permite agregar clientes nuevos al pedido.
+ *
+ * Beneficio:
+ * - El usuario puede capturar rápido cliente + artículo.
+ */
 function createEmptyCustomerOrder(): DraftCustomerOrder {
   return {
     localId: createLocalId(),
@@ -83,6 +124,7 @@ function createEmptyCustomerOrder(): DraftCustomerOrder {
  * - Permite abrir un pedido específico.
  * - Permite editar clientes y artículos.
  * - Permite agregar más clientes o más artículos.
+ * - Permite marcar artículos individuales como pagados.
  *
  * Beneficio:
  * - La pantalla principal queda limpia.
@@ -118,8 +160,12 @@ export default function OrderDetailScreen() {
   /**
    * Carga el pedido recibido del backend al formulario editable.
    *
+   * Para qué sirve:
+   * - Convierte datos reales en datos temporales editables.
+   *
    * Beneficio:
-   * - Convertimos datos reales en datos temporales editables.
+   * - El usuario puede modificar el pedido sin tocar la base de datos
+   *   hasta presionar "Guardar cambios".
    */
   useEffect(() => {
     if (!order) {
@@ -142,6 +188,17 @@ export default function OrderDetailScreen() {
           description: item.descriptionSnapshot ?? "",
           quantity: item.quantity,
           unitPrice: Number(item.unitPriceSnapshot),
+
+          /**
+           * Cargamos el estado de pago guardado en backend.
+           *
+           * Para qué sirve:
+           * - Si el artículo ya estaba pagado, se muestra así al abrir el pedido.
+           *
+           * Beneficio:
+           * - No se pierde el estado Pagado/Pendiente al editar.
+           */
+          isPaid: item.isPaid ?? false,
         })),
       }),
     );
@@ -152,11 +209,14 @@ export default function OrderDetailScreen() {
   }, [order]);
 
   /**
-   * Calcula total general temporal.
+   * Calcula el total general temporal.
+   *
+   * Para qué sirve:
+   * - Muestra el total antes de guardar.
    *
    * Beneficio:
-   * - El usuario ve el total antes de guardar.
-   * - El backend recalcula de nuevo para seguridad.
+   * - El usuario ve cambios en tiempo real.
+   * - El backend recalcula otra vez por seguridad.
    */
   const draftTotal = useMemo(() => {
     return draftCustomers.reduce((orderTotal, customerOrder) => {
@@ -168,6 +228,9 @@ export default function OrderDetailScreen() {
     }, 0);
   }, [draftCustomers]);
 
+  /**
+   * Agrega otro cliente al pedido.
+   */
   function handleAddCustomer() {
     setDraftCustomers((current) => [...current, createEmptyCustomerOrder()]);
   }
@@ -205,6 +268,9 @@ export default function OrderDetailScreen() {
     );
   }
 
+  /**
+   * Actualiza datos del cliente temporal.
+   */
   function handleUpdateCustomer(
     customerLocalId: string,
     field: "name" | "phone" | "notes",
@@ -222,6 +288,9 @@ export default function OrderDetailScreen() {
     );
   }
 
+  /**
+   * Agrega un artículo vacío a un cliente.
+   */
   function handleAddItem(customerLocalId: string) {
     setDraftCustomers((current) =>
       current.map((customerOrder) =>
@@ -275,6 +344,44 @@ export default function OrderDetailScreen() {
     );
   }
 
+  /**
+   * Cambia el estado de pago de un artículo.
+   *
+   * Para qué sirve:
+   * - Permite marcar un artículo como pagado o pendiente desde la edición.
+   *
+   * Beneficio:
+   * - El vendedor puede actualizar pagos parciales sin afectar todo el pedido.
+   */
+  function handleToggleItemPaid(customerLocalId: string, itemLocalId: string) {
+    setDraftCustomers((current) =>
+      current.map((customerOrder) =>
+        customerOrder.localId === customerLocalId
+          ? {
+              ...customerOrder,
+              items: customerOrder.items.map((item) =>
+                item.localId === itemLocalId
+                  ? {
+                      ...item,
+                      isPaid: !(item.isPaid ?? false),
+                    }
+                  : item,
+              ),
+            }
+          : customerOrder,
+      ),
+    );
+  }
+
+  /**
+   * Actualiza un campo de un artículo.
+   *
+   * Para qué sirve:
+   * - Permite editar SKU, nombre, descripción, cantidad y precio.
+   *
+   * Beneficio:
+   * - El formulario mantiene los cambios antes de guardar.
+   */
   function handleUpdateItem(
     customerLocalId: string,
     itemLocalId: string,
@@ -316,6 +423,13 @@ export default function OrderDetailScreen() {
     );
   }
 
+  /**
+   * Valida el pedido antes de enviarlo al backend.
+   *
+   * Beneficio:
+   * - Evita guardar pedidos sin clientes, sin artículos,
+   *   con cantidades inválidas o precios inválidos.
+   */
   function validateDraftOrder() {
     if (!draftCustomers.length) {
       Alert.alert(
@@ -381,7 +495,9 @@ export default function OrderDetailScreen() {
    * - Manda el pedido completo al endpoint PUT /api/orders/:id/full.
    *
    * Beneficio:
-   * - El backend reconstruye clientes/artículos y recalcula totales.
+   * - El backend reconstruye clientes/artículos.
+   * - El backend recalcula totales.
+   * - El backend conserva el estado pagado/pendiente por artículo.
    */
   async function handleSaveChanges() {
     try {
@@ -400,6 +516,18 @@ export default function OrderDetailScreen() {
             description: item.description?.trim() || null,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+
+            /**
+             * Enviamos el estado de pago individual del artículo.
+             *
+             * Para qué sirve:
+             * - El backend puede reconstruir el pedido conservando
+             *   qué artículos están pagados.
+             *
+             * Beneficio:
+             * - Al editar el pedido completo, no se pierde el estado Pagado/Pendiente.
+             */
+            isPaid: item.isPaid ?? false,
           })),
         }),
       );
@@ -450,14 +578,9 @@ export default function OrderDetailScreen() {
   if (error || !order) {
     return (
       <View className="flex-1 bg-slate-100 px-5 pt-16">
-        <Pressable
-          className="rounded-xl bg-slate-950 px-4 py-3 active:opacity-80"
-          onPress={() => router.back()}
-        >
-          <Text className="text-center font-bold text-white">Volver</Text>
-        </Pressable>
+        <AppButton title="Volver" onPress={() => router.back()} />
 
-        <View className="mt-6 rounded-3xl bg-white p-5">
+        <AppCard className="mt-6">
           <Text className="text-xl font-extrabold text-red-600">
             No se pudo cargar el pedido
           </Text>
@@ -466,13 +589,12 @@ export default function OrderDetailScreen() {
             Revisa tu conexión o que el backend esté activo.
           </Text>
 
-          <Pressable
-            className="mt-5 rounded-xl bg-slate-950 py-4 active:opacity-80"
+          <AppButton
+            title="Reintentar"
+            className="mt-5"
             onPress={() => refetch()}
-          >
-            <Text className="text-center font-bold text-white">Reintentar</Text>
-          </Pressable>
-        </View>
+          />
+        </AppCard>
       </View>
     );
   }
@@ -480,14 +602,9 @@ export default function OrderDetailScreen() {
   return (
     <ScrollView className="flex-1 bg-slate-100">
       <View className="px-5 pb-10 pt-16">
-        <Pressable
-          className="rounded-xl bg-slate-950 px-4 py-3 active:opacity-80"
-          onPress={() => router.back()}
-        >
-          <Text className="text-center font-bold text-white">Volver</Text>
-        </Pressable>
+        <AppButton title="Volver" onPress={() => router.back()} />
 
-        <View className="mt-6 rounded-3xl bg-white p-5">
+        <AppCard className="mt-6">
           <Text className="text-2xl font-extrabold text-slate-950">
             Editar pedido #{order.id}
           </Text>
@@ -506,43 +623,20 @@ export default function OrderDetailScreen() {
             </Text>
           </View>
 
-          <Text className="mt-5 font-extrabold text-slate-950">
-            Estado del pedido
-          </Text>
+          <OrderStatusSelector
+            className="mt-5"
+            value={status}
+            onChange={setStatus}
+          />
 
-          <View className="mt-3 flex-row flex-wrap gap-2">
-            {orderStatusOptions.map((statusOption) => {
-              const isSelected = status === statusOption.value;
-
-              return (
-                <Pressable
-                  key={statusOption.value}
-                  className={`rounded-xl px-3 py-2 active:opacity-80 ${
-                    isSelected ? "bg-slate-950" : "bg-slate-100"
-                  }`}
-                  onPress={() => setStatus(statusOption.value)}
-                >
-                  <Text
-                    className={`text-xs font-bold ${
-                      isSelected ? "text-white" : "text-slate-700"
-                    }`}
-                  >
-                    {statusOption.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <TextInput
-            className="mt-5 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900"
+          <AppInput
+            className="mt-5"
             placeholder="Notas del pedido"
-            placeholderTextColor="#94a3b8"
             value={orderNotes}
             onChangeText={setOrderNotes}
             multiline
           />
-        </View>
+        </AppCard>
 
         <View className="mt-6 gap-5">
           {draftCustomers.map((customerOrder, customerIndex) => {
@@ -552,10 +646,7 @@ export default function OrderDetailScreen() {
             );
 
             return (
-              <View
-                key={customerOrder.localId}
-                className="rounded-3xl bg-white p-5"
-              >
+              <AppCard key={customerOrder.localId}>
                 <View className="flex-row items-start justify-between gap-3">
                   <View className="flex-1">
                     <Text className="text-xl font-extrabold text-slate-950">
@@ -568,33 +659,30 @@ export default function OrderDetailScreen() {
                   </View>
 
                   {draftCustomers.length > 1 ? (
-                    <Pressable
-                      className="rounded-lg bg-red-100 px-3 py-2 active:opacity-80"
+                    <AppButton
+                      title="Quitar"
+                      variant="danger"
+                      className="px-3 py-2"
+                      textClassName="text-xs"
                       onPress={() =>
                         handleRemoveCustomer(customerOrder.localId)
                       }
-                    >
-                      <Text className="text-xs font-bold text-red-700">
-                        Quitar
-                      </Text>
-                    </Pressable>
+                    />
                   ) : null}
                 </View>
 
-                <TextInput
-                  className="mt-4 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900"
+                <AppInput
+                  className="mt-4"
                   placeholder="Nombre del cliente"
-                  placeholderTextColor="#94a3b8"
                   value={customerOrder.name}
                   onChangeText={(value) =>
                     handleUpdateCustomer(customerOrder.localId, "name", value)
                   }
                 />
 
-                <TextInput
-                  className="mt-3 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900"
+                <AppInput
+                  className="mt-3"
                   placeholder="Teléfono"
-                  placeholderTextColor="#94a3b8"
                   keyboardType="phone-pad"
                   value={customerOrder.phone}
                   onChangeText={(value) =>
@@ -602,10 +690,9 @@ export default function OrderDetailScreen() {
                   }
                 />
 
-                <TextInput
-                  className="mt-3 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-900"
+                <AppInput
+                  className="mt-3"
                   placeholder="Notas del cliente"
-                  placeholderTextColor="#94a3b8"
                   value={customerOrder.notes}
                   onChangeText={(value) =>
                     handleUpdateCustomer(customerOrder.localId, "notes", value)
@@ -623,32 +710,46 @@ export default function OrderDetailScreen() {
                       key={item.localId}
                       className="rounded-2xl bg-slate-50 p-4"
                     >
-                      <View className="flex-row items-center justify-between">
-                        <Text className="font-extrabold text-slate-950">
-                          Artículo #{itemIndex + 1}
-                        </Text>
+                      <View className="gap-3">
+                        <View className="flex-row items-center justify-between gap-3">
+                          <Text className="font-extrabold text-slate-950">
+                            Artículo #{itemIndex + 1}
+                          </Text>
 
-                        {customerOrder.items.length > 1 ? (
-                          <Pressable
-                            className="rounded-lg bg-red-100 px-3 py-2 active:opacity-80"
-                            onPress={() =>
-                              handleRemoveItem(
-                                customerOrder.localId,
-                                item.localId,
-                              )
-                            }
-                          >
-                            <Text className="text-xs font-bold text-red-700">
-                              Quitar
-                            </Text>
-                          </Pressable>
-                        ) : null}
+                          {customerOrder.items.length > 1 ? (
+                            <AppButton
+                              title="Quitar"
+                              variant="danger"
+                              className="px-3 py-2"
+                              textClassName="text-xs"
+                              onPress={() =>
+                                handleRemoveItem(
+                                  customerOrder.localId,
+                                  item.localId,
+                                )
+                              }
+                            />
+                          ) : null}
+                        </View>
+
+                        <AppButton
+                          title={item.isPaid ? "Pagado" : "Pendiente de pago"}
+                          variant={item.isPaid ? "success" : "outline"}
+                          className="self-start px-3 py-2"
+                          textClassName="text-xs"
+                          onPress={() =>
+                            handleToggleItemPaid(
+                              customerOrder.localId,
+                              item.localId,
+                            )
+                          }
+                        />
                       </View>
 
-                      <TextInput
-                        className="mt-3 rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900"
+                      <AppInput
+                        className="mt-3"
+                        inputClassName="bg-white"
                         placeholder="SKU / Código"
-                        placeholderTextColor="#94a3b8"
                         value={item.sku}
                         onChangeText={(value) =>
                           handleUpdateItem(
@@ -660,10 +761,10 @@ export default function OrderDetailScreen() {
                         }
                       />
 
-                      <TextInput
-                        className="mt-3 rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900"
+                      <AppInput
+                        className="mt-3"
+                        inputClassName="bg-white"
                         placeholder="Nombre del artículo"
-                        placeholderTextColor="#94a3b8"
                         value={item.name}
                         onChangeText={(value) =>
                           handleUpdateItem(
@@ -675,10 +776,10 @@ export default function OrderDetailScreen() {
                         }
                       />
 
-                      <TextInput
-                        className="mt-3 rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900"
+                      <AppInput
+                        className="mt-3"
+                        inputClassName="bg-white"
                         placeholder="Descripción"
-                        placeholderTextColor="#94a3b8"
                         value={item.description ?? ""}
                         onChangeText={(value) =>
                           handleUpdateItem(
@@ -691,10 +792,11 @@ export default function OrderDetailScreen() {
                       />
 
                       <View className="mt-3 flex-row gap-3">
-                        <TextInput
-                          className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900"
-                          placeholder="Cantidad"
-                          placeholderTextColor="#94a3b8"
+                        <AppInput
+                          className="flex-1"
+                          inputClassName="bg-white"
+                          label="Cantidad"
+                          placeholder="Ej. 1"
                           keyboardType="numeric"
                           value={String(item.quantity)}
                           onChangeText={(value) =>
@@ -707,10 +809,11 @@ export default function OrderDetailScreen() {
                           }
                         />
 
-                        <TextInput
-                          className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900"
-                          placeholder="Precio"
-                          placeholderTextColor="#94a3b8"
+                        <AppInput
+                          className="flex-1"
+                          inputClassName="bg-white"
+                          label="Precio"
+                          placeholder="Ej. 250"
                           keyboardType="numeric"
                           value={String(item.unitPrice)}
                           onChangeText={(value) =>
@@ -731,43 +834,31 @@ export default function OrderDetailScreen() {
                   ))}
                 </View>
 
-                <Pressable
-                  className="mt-4 rounded-xl bg-slate-800 py-3 active:opacity-80"
+                <AppButton
+                  title="+ Agregar artículo"
+                  variant="secondary"
+                  className="mt-4"
                   onPress={() => handleAddItem(customerOrder.localId)}
-                >
-                  <Text className="text-center font-bold text-white">
-                    + Agregar artículo
-                  </Text>
-                </Pressable>
-              </View>
+                />
+              </AppCard>
             );
           })}
         </View>
 
-        <Pressable
-          className="mt-5 rounded-xl border border-dashed border-slate-400 py-4 active:opacity-80"
+        <AppButton
+          title="+ Agregar otro cliente"
+          variant="outline"
+          className="mt-5 py-4"
           onPress={handleAddCustomer}
-        >
-          <Text className="text-center font-bold text-slate-700">
-            + Agregar otro cliente
-          </Text>
-        </Pressable>
+        />
 
-        <Pressable
-          className={`mt-6 rounded-xl py-4 active:opacity-80 ${
-            isSaving ? "bg-slate-500" : "bg-emerald-600"
-          }`}
+        <AppButton
+          title="Guardar cambios"
+          variant="success"
+          className="mt-6 py-4"
           onPress={handleSaveChanges}
-          disabled={isSaving}
-        >
-          {isSaving ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text className="text-center font-bold text-white">
-              Guardar cambios
-            </Text>
-          )}
-        </Pressable>
+          isLoading={isSaving}
+        />
       </View>
     </ScrollView>
   );

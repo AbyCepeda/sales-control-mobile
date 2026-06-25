@@ -96,8 +96,11 @@ function parseNumber(value: string) {
 /**
  * Crea un artículo vacío.
  *
+ * Para qué sirve:
+ * - Inicializa un artículo nuevo en el formulario.
+ *
  * Beneficio:
- * - Reutilizamos la misma estructura al agregar clientes o artículos.
+ * - Todo artículo nuevo empieza como pendiente de pago.
  */
 function createEmptyItem(): DraftOrderItem {
   return {
@@ -107,6 +110,7 @@ function createEmptyItem(): DraftOrderItem {
     description: "",
     quantity: 1,
     unitPrice: 0,
+    isPaid: false,
   };
 }
 
@@ -271,6 +275,36 @@ export default function OrdersScreen() {
   }
 
   /**
+   * Cambia el estado de pago de un artículo.
+   *
+   * Para qué sirve:
+   * - Permite marcar un artículo individual como pagado o pendiente.
+   *
+   * Beneficio:
+   * - No necesitamos marcar todo el pedido como pagado.
+   * - Un pedido puede tener artículos pagados y otros pendientes.
+   */
+  function handleToggleItemPaid(customerLocalId: string, itemLocalId: string) {
+    setDraftCustomers((current) =>
+      current.map((customerOrder) =>
+        customerOrder.localId === customerLocalId
+          ? {
+              ...customerOrder,
+              items: customerOrder.items.map((item) =>
+                item.localId === itemLocalId
+                  ? {
+                      ...item,
+                      isPaid: !(item.isPaid ?? false),
+                    }
+                  : item,
+              ),
+            }
+          : customerOrder,
+      ),
+    );
+  }
+
+  /**
    * Actualiza un campo de un artículo.
    */
   function handleUpdateItem(
@@ -395,6 +429,17 @@ export default function OrdersScreen() {
             description: item.description?.trim() || null,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+
+            /**
+             * Guardamos si este artículo individual ya fue pagado.
+             *
+             * Para qué sirve:
+             * - El backend conserva el estado de pago por artículo.
+             *
+             * Beneficio:
+             * - Al abrir el pedido después, se mantiene como Pagado/Pendiente.
+             */
+            isPaid: item.isPaid ?? false,
           })),
         }),
       );
@@ -405,7 +450,7 @@ export default function OrdersScreen() {
         customers: customersPayload,
       };
 
-      console.log("CREATE_ORDER_PAYLOAD:", JSON.stringify(payload, null, 2));
+      //console.log("CREATE_ORDER_PAYLOAD:", JSON.stringify(payload, null, 2));
 
       await createOrder(payload).unwrap();
 
@@ -415,7 +460,7 @@ export default function OrdersScreen() {
 
       Alert.alert("Pedido creado", "El pedido se guardó correctamente.");
     } catch (error: any) {
-      console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
+      //console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
 
       Alert.alert(
         "Error al crear pedido",
@@ -587,25 +632,42 @@ export default function OrdersScreen() {
                           key={item.localId}
                           className="rounded-xl bg-white p-4"
                         >
-                          <View className="flex-row items-center justify-between gap-3">
-                            <Text className="font-extrabold text-slate-950">
-                              Artículo #{itemIndex + 1}
-                            </Text>
+                          <View className="gap-3">
+                            <View className="flex-row items-center justify-between gap-3">
+                              <Text className="font-extrabold text-slate-950">
+                                Artículo #{itemIndex + 1}
+                              </Text>
 
-                            {customerOrder.items.length > 1 ? (
-                              <AppButton
-                                title="Quitar"
-                                variant="danger"
-                                className="px-3 py-2"
-                                textClassName="text-xs"
-                                onPress={() =>
-                                  handleRemoveItem(
-                                    customerOrder.localId,
-                                    item.localId,
-                                  )
-                                }
-                              />
-                            ) : null}
+                              {customerOrder.items.length > 1 ? (
+                                <AppButton
+                                  title="Quitar"
+                                  variant="danger"
+                                  className="px-3 py-2"
+                                  textClassName="text-xs"
+                                  onPress={() =>
+                                    handleRemoveItem(
+                                      customerOrder.localId,
+                                      item.localId,
+                                    )
+                                  }
+                                />
+                              ) : null}
+                            </View>
+
+                            <AppButton
+                              title={
+                                item.isPaid ? "Pagado" : "Pendiente de pago"
+                              }
+                              variant={item.isPaid ? "success" : "outline"}
+                              className="self-start px-3 py-2"
+                              textClassName="text-xs"
+                              onPress={() =>
+                                handleToggleItemPaid(
+                                  customerOrder.localId,
+                                  item.localId,
+                                )
+                              }
+                            />
                           </View>
 
                           <AppInput
@@ -653,7 +715,8 @@ export default function OrdersScreen() {
                           <View className="mt-3 flex-row gap-3">
                             <AppInput
                               className="flex-1"
-                              placeholder="Cantidad"
+                              label="Cantidad"
+                              placeholder="Ej. 1"
                               keyboardType="numeric"
                               value={String(item.quantity)}
                               onChangeText={(value) =>
@@ -668,7 +731,8 @@ export default function OrdersScreen() {
 
                             <AppInput
                               className="flex-1"
-                              placeholder="Precio"
+                              label="Precio"
+                              placeholder="Ej. 250"
                               keyboardType="numeric"
                               value={String(item.unitPrice)}
                               onChangeText={(value) =>
@@ -810,29 +874,40 @@ export default function OrdersScreen() {
                     </View>
 
                     <View className="mt-4 gap-3">
-                      {order.customerOrders.map((customerOrder) => (
-                        <View
-                          key={customerOrder.id}
-                          className="rounded-xl bg-slate-50 p-4"
-                        >
-                          <Text className="font-extrabold text-slate-950">
-                            {customerOrder.customer.name}
-                          </Text>
+                      {order.customerOrders.map((customerOrder) => {
+                        const paidItemsCount = customerOrder.items.filter(
+                          (item) => item.isPaid,
+                        ).length;
 
-                          <Text className="mt-1 text-sm text-slate-500">
-                            {customerOrder.customer.phone ?? "Sin teléfono"}
-                          </Text>
+                        return (
+                          <View
+                            key={customerOrder.id}
+                            className="rounded-xl bg-slate-50 p-4"
+                          >
+                            <Text className="font-extrabold text-slate-950">
+                              {customerOrder.customer.name}
+                            </Text>
 
-                          <Text className="mt-1 text-sm text-slate-500">
-                            Artículos: {customerOrder.items.length}
-                          </Text>
+                            <Text className="mt-1 text-sm text-slate-500">
+                              {customerOrder.customer.phone ?? "Sin teléfono"}
+                            </Text>
 
-                          <Text className="mt-1 text-sm font-bold text-slate-700">
-                            Total cliente: $
-                            {Number(customerOrder.total).toFixed(2)}
-                          </Text>
-                        </View>
-                      ))}
+                            <Text className="mt-1 text-sm text-slate-500">
+                              Artículos: {customerOrder.items.length}
+                            </Text>
+
+                            <Text className="mt-1 text-sm font-bold text-emerald-700">
+                              Pagados: {paidItemsCount}/
+                              {customerOrder.items.length}
+                            </Text>
+
+                            <Text className="mt-1 text-sm font-bold text-slate-700">
+                              Total cliente: $
+                              {Number(customerOrder.total).toFixed(2)}
+                            </Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   </AppCard>
                 );
