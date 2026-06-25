@@ -1,3 +1,4 @@
+import { OrderItemForm } from "@/src/components/orders/OrderItemForm";
 import { OrderSummaryCard } from "@/src/components/orders/OrderSummaryCard";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppCard } from "@/src/components/ui/AppCard";
@@ -626,129 +627,16 @@ export default function OrdersScreen() {
 
                     <View className="mt-3 gap-3">
                       {customerOrder.items.map((item, itemIndex) => (
-                        <View
+                        <OrderItemForm
                           key={item.localId}
-                          className="rounded-xl bg-white p-4"
-                        >
-                          <View className="gap-3">
-                            <View className="flex-row items-center justify-between gap-3">
-                              <Text className="font-extrabold text-slate-950">
-                                Artículo #{itemIndex + 1}
-                              </Text>
-
-                              {customerOrder.items.length > 1 ? (
-                                <AppButton
-                                  title="Quitar"
-                                  variant="danger"
-                                  className="px-3 py-2"
-                                  textClassName="text-xs"
-                                  onPress={() =>
-                                    handleRemoveItem(
-                                      customerOrder.localId,
-                                      item.localId,
-                                    )
-                                  }
-                                />
-                              ) : null}
-                            </View>
-
-                            <AppButton
-                              title={
-                                item.isPaid ? "Pagado" : "Pendiente de pago"
-                              }
-                              variant={item.isPaid ? "success" : "outline"}
-                              className="self-start px-3 py-2"
-                              textClassName="text-xs"
-                              onPress={() =>
-                                handleToggleItemPaid(
-                                  customerOrder.localId,
-                                  item.localId,
-                                )
-                              }
-                            />
-                          </View>
-
-                          <AppInput
-                            className="mt-3"
-                            placeholder="SKU / Código"
-                            value={item.sku}
-                            onChangeText={(value) =>
-                              handleUpdateItem(
-                                customerOrder.localId,
-                                item.localId,
-                                "sku",
-                                value,
-                              )
-                            }
-                          />
-
-                          <AppInput
-                            className="mt-3"
-                            placeholder="Nombre del artículo"
-                            value={item.name}
-                            onChangeText={(value) =>
-                              handleUpdateItem(
-                                customerOrder.localId,
-                                item.localId,
-                                "name",
-                                value,
-                              )
-                            }
-                          />
-
-                          <AppInput
-                            className="mt-3"
-                            placeholder="Descripción"
-                            value={item.description ?? ""}
-                            onChangeText={(value) =>
-                              handleUpdateItem(
-                                customerOrder.localId,
-                                item.localId,
-                                "description",
-                                value,
-                              )
-                            }
-                          />
-
-                          <View className="mt-3 flex-row gap-3">
-                            <AppInput
-                              className="flex-1"
-                              label="Cantidad"
-                              placeholder="Ej. 1"
-                              keyboardType="numeric"
-                              value={String(item.quantity)}
-                              onChangeText={(value) =>
-                                handleUpdateItem(
-                                  customerOrder.localId,
-                                  item.localId,
-                                  "quantity",
-                                  value,
-                                )
-                              }
-                            />
-
-                            <AppInput
-                              className="flex-1"
-                              label="Precio"
-                              placeholder="Ej. 250"
-                              keyboardType="numeric"
-                              value={String(item.unitPrice)}
-                              onChangeText={(value) =>
-                                handleUpdateItem(
-                                  customerOrder.localId,
-                                  item.localId,
-                                  "unitPrice",
-                                  value,
-                                )
-                              }
-                            />
-                          </View>
-
-                          <Text className="mt-3 text-right text-sm font-bold text-slate-700">
-                            Subtotal: $
-                            {(item.quantity * item.unitPrice).toFixed(2)}
-                          </Text>
-                        </View>
+                          customerLocalId={customerOrder.localId}
+                          item={item}
+                          itemIndex={itemIndex}
+                          itemsCount={customerOrder.items.length}
+                          onRemoveItem={handleRemoveItem}
+                          onToggleItemPaid={handleToggleItemPaid}
+                          onUpdateItem={handleUpdateItem}
+                        />
                       ))}
                     </View>
 
