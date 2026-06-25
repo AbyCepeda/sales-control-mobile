@@ -1,22 +1,22 @@
 import type {
-    CreateOrderCustomerRequest,
-    CreateOrderItemRequest,
-    OrderStatus,
+  CreateOrderCustomerRequest,
+  CreateOrderItemRequest,
+  OrderStatus,
 } from "@/src/features/orders/order.types";
 import {
-    useGetOrderByIdQuery,
-    useUpdateFullOrderMutation,
+  useGetOrderByIdQuery,
+  useUpdateFullOrderMutation,
 } from "@/src/services/ordersApi";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 type DraftOrderItem = CreateOrderItemRequest & {
@@ -172,11 +172,36 @@ export default function OrderDetailScreen() {
     setDraftCustomers((current) => [...current, createEmptyCustomerOrder()]);
   }
 
+  /**
+   * Confirma antes de quitar un cliente del pedido.
+   *
+   * Para qué sirve:
+   * - Evita eliminar un cliente por accidente.
+   *
+   * Beneficio:
+   * - El usuario tiene oportunidad de cancelar antes de guardar cambios.
+   */
   function handleRemoveCustomer(customerLocalId: string) {
-    setDraftCustomers((current) =>
-      current.filter(
-        (customerOrder) => customerOrder.localId !== customerLocalId,
-      ),
+    Alert.alert(
+      "Quitar cliente",
+      "¿Seguro que quieres quitar este cliente del pedido?",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel",
+        },
+        {
+          text: "Quitar",
+          style: "destructive",
+          onPress: () => {
+            setDraftCustomers((current) =>
+              current.filter(
+                (customerOrder) => customerOrder.localId !== customerLocalId,
+              ),
+            );
+          },
+        },
+      ],
     );
   }
 
@@ -210,18 +235,43 @@ export default function OrderDetailScreen() {
     );
   }
 
+  /**
+   * Confirma antes de quitar un artículo del cliente.
+   *
+   * Para qué sirve:
+   * - Evita quitar productos por error.
+   *
+   * Beneficio:
+   * - Reduce errores al editar pedidos grandes.
+   */
   function handleRemoveItem(customerLocalId: string, itemLocalId: string) {
-    setDraftCustomers((current) =>
-      current.map((customerOrder) =>
-        customerOrder.localId === customerLocalId
-          ? {
-              ...customerOrder,
-              items: customerOrder.items.filter(
-                (item) => item.localId !== itemLocalId,
+    Alert.alert(
+      "Quitar artículo",
+      "¿Seguro que quieres quitar este artículo del pedido?",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel",
+        },
+        {
+          text: "Quitar",
+          style: "destructive",
+          onPress: () => {
+            setDraftCustomers((current) =>
+              current.map((customerOrder) =>
+                customerOrder.localId === customerLocalId
+                  ? {
+                      ...customerOrder,
+                      items: customerOrder.items.filter(
+                        (item) => item.localId !== itemLocalId,
+                      ),
+                    }
+                  : customerOrder,
               ),
-            }
-          : customerOrder,
-      ),
+            );
+          },
+        },
+      ],
     );
   }
 
