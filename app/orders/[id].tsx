@@ -1,4 +1,4 @@
-import { OrderItemForm } from "@/src/components/orders/OrderItemForm";
+import { OrderCustomerForm } from "@/src/components/orders/OrderCustomerForm";
 import { OrderStatusSelector } from "@/src/components/orders/OrderStatusSelector";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppCard } from "@/src/components/ui/AppCard";
@@ -648,84 +648,18 @@ export default function OrderDetailScreen() {
 
             return (
               <AppCard key={customerOrder.localId}>
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1">
-                    <Text className="text-xl font-extrabold text-slate-950">
-                      Cliente #{customerIndex + 1}
-                    </Text>
-
-                    <Text className="mt-1 text-sm font-bold text-emerald-700">
-                      Total cliente: ${customerTotal.toFixed(2)}
-                    </Text>
-                  </View>
-
-                  {draftCustomers.length > 1 ? (
-                    <AppButton
-                      title="Quitar"
-                      variant="danger"
-                      className="px-3 py-2"
-                      textClassName="text-xs"
-                      onPress={() =>
-                        handleRemoveCustomer(customerOrder.localId)
-                      }
-                    />
-                  ) : null}
-                </View>
-
-                <AppInput
-                  className="mt-4"
-                  placeholder="Nombre del cliente"
-                  value={customerOrder.name}
-                  onChangeText={(value) =>
-                    handleUpdateCustomer(customerOrder.localId, "name", value)
-                  }
-                />
-
-                <AppInput
-                  className="mt-3"
-                  placeholder="Teléfono"
-                  keyboardType="phone-pad"
-                  value={customerOrder.phone}
-                  onChangeText={(value) =>
-                    handleUpdateCustomer(customerOrder.localId, "phone", value)
-                  }
-                />
-
-                <AppInput
-                  className="mt-3"
-                  placeholder="Notas del cliente"
-                  value={customerOrder.notes}
-                  onChangeText={(value) =>
-                    handleUpdateCustomer(customerOrder.localId, "notes", value)
-                  }
-                  multiline
-                />
-
-                <Text className="mt-5 text-base font-extrabold text-slate-950">
-                  Artículos
-                </Text>
-
-                <View className="mt-3 gap-3">
-                  {customerOrder.items.map((item, itemIndex) => (
-                    <OrderItemForm
-                      key={item.localId}
-                      customerLocalId={customerOrder.localId}
-                      item={item}
-                      itemIndex={itemIndex}
-                      itemsCount={customerOrder.items.length}
-                      inputClassName="bg-white"
-                      onRemoveItem={handleRemoveItem}
-                      onToggleItemPaid={handleToggleItemPaid}
-                      onUpdateItem={handleUpdateItem}
-                    />
-                  ))}
-                </View>
-
-                <AppButton
-                  title="+ Agregar artículo"
-                  variant="secondary"
-                  className="mt-4"
-                  onPress={() => handleAddItem(customerOrder.localId)}
+                <OrderCustomerForm
+                  customerOrder={customerOrder}
+                  customerIndex={customerIndex}
+                  customersCount={draftCustomers.length}
+                  customerTotal={customerTotal}
+                  itemInputClassName="bg-white"
+                  onRemoveCustomer={handleRemoveCustomer}
+                  onUpdateCustomer={handleUpdateCustomer}
+                  onAddItem={handleAddItem}
+                  onRemoveItem={handleRemoveItem}
+                  onToggleItemPaid={handleToggleItemPaid}
+                  onUpdateItem={handleUpdateItem}
                 />
               </AppCard>
             );
