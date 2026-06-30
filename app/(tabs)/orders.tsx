@@ -5,7 +5,7 @@ import { AppCard } from "@/src/components/ui/AppCard";
 import { AppInput } from "@/src/components/ui/AppInput";
 import type {
   CreateOrderItemRequest,
-  OrderStatus
+  OrderStatus,
 } from "@/src/features/orders/order.types";
 import type { DraftCustomerOrder } from "@/src/features/orders/orderDraft.types";
 import {
@@ -15,6 +15,7 @@ import {
   parseNumber,
   validateDraftOrder,
 } from "@/src/features/orders/orderDraft.utils";
+import { getOrderStatusLabel } from "@/src/features/orders/orderStatus.utils";
 import {
   useCreateOrderMutation,
   useGetOrdersQuery,
@@ -22,26 +23,6 @@ import {
 } from "@/src/services/ordersApi";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
-
-/**
- * Traduce los estados del backend a texto legible.
- *
- * Para qué sirve:
- * - Usamos este texto en alerts.
- *
- * Beneficio:
- * - El usuario ve "Pagado" en lugar de "PAID".
- */
-function getStatusLabel(status: OrderStatus) {
-  const labels: Record<OrderStatus, string> = {
-    PENDING: "Pendiente",
-    PAID: "Pagado",
-    DELIVERED: "Entregado",
-    CANCELLED: "Cancelado",
-  };
-
-  return labels[status];
-}
 
 /**
  * Pantalla principal de pedidos.
@@ -319,7 +300,7 @@ export default function OrdersScreen() {
 
       Alert.alert(
         "Pedido actualizado",
-        `El pedido ahora está: ${getStatusLabel(status)}.`,
+        `El pedido ahora está: ${getOrderStatusLabel(status)}.`,
       );
     } catch (error: any) {
       console.error("UPDATE_ORDER_ERROR:", JSON.stringify(error, null, 2));

@@ -1,4 +1,5 @@
 import type { OrderStatus } from "@/src/features/orders/order.types";
+import { getOrderStatusLabel } from "@/src/features/orders/orderStatus.utils";
 import { Text, View } from "react-native";
 
 /**
@@ -10,23 +11,6 @@ type StatusBadgeProps = {
    */
   status: OrderStatus;
 };
-
-/**
- * Traduce el estado técnico a texto visible.
- *
- * Para qué sirve:
- * - Evita mostrar PENDING, PAID, etc. directamente al usuario.
- */
-function getStatusLabel(status: OrderStatus) {
-  const labels: Record<OrderStatus, string> = {
-    PENDING: "Pendiente",
-    PAID: "Pagado",
-    DELIVERED: "Entregado",
-    CANCELLED: "Cancelado",
-  };
-
-  return labels[status];
-}
 
 /**
  * Obtiene clases de color según el estado.
@@ -76,7 +60,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       )}`}
     >
       <Text className={`text-xs font-bold ${getStatusTextClassName(status)}`}>
-        {getStatusLabel(status)}
+        {getOrderStatusLabel(status)}
       </Text>
     </View>
   );
