@@ -8,6 +8,7 @@ import type {
   CreateOrderItemRequest,
   OrderStatus,
 } from "@/src/features/orders/order.types";
+import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
 import {
   useGetOrderByIdQuery,
   useUpdateFullOrderMutation,
@@ -425,71 +426,6 @@ export default function OrderDetailScreen() {
   }
 
   /**
-   * Valida el pedido antes de enviarlo al backend.
-   *
-   * Beneficio:
-   * - Evita guardar pedidos sin clientes, sin artículos,
-   *   con cantidades inválidas o precios inválidos.
-   */
-  function validateDraftOrder() {
-    if (!draftCustomers.length) {
-      Alert.alert(
-        "Agrega clientes",
-        "El pedido debe tener al menos un cliente.",
-      );
-      return false;
-    }
-
-    for (const customerOrder of draftCustomers) {
-      if (!customerOrder.name.trim()) {
-        Alert.alert("Nombre requerido", "Cada cliente debe tener un nombre.");
-        return false;
-      }
-
-      if (!customerOrder.items.length) {
-        Alert.alert(
-          "Faltan artículos",
-          `Agrega al menos un artículo para ${customerOrder.name}.`,
-        );
-        return false;
-      }
-
-      for (const item of customerOrder.items) {
-        if (!item.sku.trim()) {
-          Alert.alert("SKU requerido", "Todos los artículos necesitan SKU.");
-          return false;
-        }
-
-        if (!item.name.trim()) {
-          Alert.alert(
-            "Nombre requerido",
-            "Todos los artículos necesitan nombre.",
-          );
-          return false;
-        }
-
-        if (item.quantity <= 0) {
-          Alert.alert(
-            "Cantidad inválida",
-            "La cantidad debe ser mayor a cero.",
-          );
-          return false;
-        }
-
-        if (item.unitPrice <= 0) {
-          Alert.alert(
-            "Precio inválido",
-            "El precio unitario debe ser mayor a cero.",
-          );
-          return false;
-        }
-      }
-    }
-
-    return true;
-  }
-
-  /**
    * Guarda la edición completa.
    *
    * Para qué sirve:
@@ -502,7 +438,10 @@ export default function OrderDetailScreen() {
    */
   async function handleSaveChanges() {
     try {
-      if (!validateDraftOrder()) {
+      const validation = validateDraftOrder(draftCustomers);
+
+      if (!validation.isValid) {
+        Alert.alert(validation.title, validation.message);
         return;
       }
 

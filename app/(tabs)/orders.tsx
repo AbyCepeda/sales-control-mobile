@@ -4,10 +4,17 @@ import { AppButton } from "@/src/components/ui/AppButton";
 import { AppCard } from "@/src/components/ui/AppCard";
 import { AppInput } from "@/src/components/ui/AppInput";
 import type {
-  CreateOrderCustomerRequest,
   CreateOrderItemRequest,
-  OrderStatus,
+  OrderStatus
 } from "@/src/features/orders/order.types";
+import type { DraftCustomerOrder } from "@/src/features/orders/orderDraft.types";
+import {
+  buildOrderCustomersPayload,
+  createEmptyCustomerOrder,
+  createEmptyItem,
+  parseNumber,
+  validateDraftOrder,
+} from "@/src/features/orders/orderDraft.utils";
 import {
   useCreateOrderMutation,
   useGetOrdersQuery,
@@ -15,36 +22,6 @@ import {
 } from "@/src/services/ordersApi";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
-
-/**
- * Item temporal usado solo en pantalla.
- *
- * Para qué sirve:
- * - Permite capturar artículos antes de guardar el pedido.
- *
- * Beneficio:
- * - El backend recibirá datos limpios por SKU.
- */
-type DraftOrderItem = CreateOrderItemRequest & {
-  localId: string;
-};
-
-/**
- * Cliente temporal capturado dentro del pedido.
- *
- * Para qué sirve:
- * - Guarda temporalmente los datos del cliente antes de crear el pedido.
- *
- * Beneficio:
- * - No dependemos de una lista de clientes existentes.
- */
-type DraftCustomerOrder = {
-  localId: string;
-  name: string;
-  phone: string;
-  notes: string;
-  items: DraftOrderItem[];
-};
 
 /**
  * Traduce los estados del backend a texto legible.
@@ -64,69 +41,6 @@ function getStatusLabel(status: OrderStatus) {
   };
 
   return labels[status];
-}
-
-/**
- * Genera IDs locales para listas temporales.
- *
- * Beneficio:
- * - React puede renderizar clientes/artículos sin errores de key.
- */
-function createLocalId() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-/**
- * Convierte texto a número seguro.
- *
- * Beneficio:
- * - Evita mandar NaN al backend.
- */
-function parseNumber(value: string) {
-  const parsed = Number(value);
-
-  if (Number.isNaN(parsed)) {
-    return 0;
-  }
-
-  return parsed;
-}
-
-/**
- * Crea un artículo vacío.
- *
- * Para qué sirve:
- * - Inicializa un artículo nuevo en el formulario.
- *
- * Beneficio:
- * - Todo artículo nuevo empieza como pendiente de pago.
- */
-function createEmptyItem(): DraftOrderItem {
-  return {
-    localId: createLocalId(),
-    sku: "",
-    name: "",
-    description: "",
-    quantity: 1,
-    unitPrice: 0,
-    isPaid: false,
-  };
-}
-
-/**
- * Crea un cliente vacío dentro del pedido.
- *
- * Beneficio:
- * - El formulario inicia listo para capturar cliente y artículo.
- */
-function createEmptyCustomerOrder(): DraftCustomerOrder {
-  return {
-    localId: createLocalId(),
-    name: "",
-    phone: "",
-    notes: "",
-    items: [createEmptyItem()],
-  };
 }
 
 /**
@@ -348,100 +262,18 @@ export default function OrdersScreen() {
   }
 
   /**
-   * Valida el pedido antes de mandarlo al backend.
-   */
-  function validateDraftOrder() {
-    if (!draftCustomers.length) {
-      Alert.alert(
-        "Agrega clientes",
-        "El pedido debe tener al menos un cliente.",
-      );
-      return false;
-    }
-
-    for (const customerOrder of draftCustomers) {
-      if (!customerOrder.name.trim()) {
-        Alert.alert("Nombre requerido", "Cada cliente debe tener un nombre.");
-        return false;
-      }
-
-      if (!customerOrder.items.length) {
-        Alert.alert(
-          "Faltan artículos",
-          `Agrega al menos un artículo para ${customerOrder.name}.`,
-        );
-        return false;
-      }
-
-      for (const item of customerOrder.items) {
-        if (!item.sku.trim()) {
-          Alert.alert("SKU requerido", "Todos los artículos necesitan SKU.");
-          return false;
-        }
-
-        if (!item.name.trim()) {
-          Alert.alert(
-            "Nombre requerido",
-            "Todos los artículos necesitan nombre.",
-          );
-          return false;
-        }
-
-        if (item.quantity <= 0) {
-          Alert.alert(
-            "Cantidad inválida",
-            "La cantidad debe ser mayor a cero.",
-          );
-          return false;
-        }
-
-        if (item.unitPrice <= 0) {
-          Alert.alert(
-            "Precio inválido",
-            "El precio unitario debe ser mayor a cero.",
-          );
-          return false;
-        }
-      }
-    }
-
-    return true;
-  }
-
-  /**
    * Guarda el pedido general.
    */
   async function handleSaveOrder() {
     try {
-      if (!validateDraftOrder()) {
+      const validation = validateDraftOrder(draftCustomers);
+
+      if (!validation.isValid) {
+        Alert.alert(validation.title, validation.message);
         return;
       }
 
-      const customersPayload: CreateOrderCustomerRequest[] = draftCustomers.map(
-        (customerOrder) => ({
-          name: customerOrder.name.trim(),
-          phone: customerOrder.phone.trim() || null,
-          notes: customerOrder.notes.trim() || null,
-          items: customerOrder.items.map((item) => ({
-            sku: item.sku.trim(),
-            name: item.name.trim(),
-            description: item.description?.trim() || null,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-
-            /**
-             * Guardamos si este artículo individual ya fue pagado.
-             *
-             * Para qué sirve:
-             * - El backend conserva el estado de pago por artículo.
-             *
-             * Beneficio:
-             * - Al abrir el pedido después, se mantiene como Pagado/Pendiente.
-             */
-            isPaid: item.isPaid ?? false,
-          })),
-        }),
-      );
+      const customersPayload = buildOrderCustomersPayload(draftCustomers);
 
       const payload = {
         notes: orderNotes.trim() || null,
