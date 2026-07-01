@@ -5,7 +5,8 @@ import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import type { Order, OrderStatus } from "@/src/features/orders/order.types";
 import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
 import { router } from "expo-router";
-import { Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, Text, View } from "react-native";
 
 /**
  * Props del componente OrderSummaryCard.
@@ -17,25 +18,8 @@ import { Text, View } from "react-native";
  * - La pantalla orders.tsx ya no carga con todo el diseño del pedido.
  */
 type OrderSummaryCardProps = {
-  /**
-   * Pedido que se va a mostrar.
-   */
   order: Order;
-
-  /**
-   * Indica si este pedido está actualizando su estado.
-   *
-   * Para qué sirve:
-   * - Bloquea el selector mientras se guarda el cambio.
-   *
-   * Beneficio:
-   * - Evita mandar varias peticiones seguidas por accidente.
-   */
   isUpdating: boolean;
-
-  /**
-   * Función para cambiar el estado rápido del pedido.
-   */
   onUpdateStatus: (orderId: number, status: OrderStatus) => void;
 };
 
@@ -43,19 +27,35 @@ type OrderSummaryCardProps = {
  * Card resumen de pedido.
  *
  * Para qué sirve:
- * - Muestra pedido, total, estado, clientes y conteo de artículos pagados.
- * - Permite entrar al detalle.
+ * - Muestra información principal del pedido.
+ * - Permite abrir/cerrar el resumen de clientes.
  * - Permite cambiar estado rápido.
  *
  * Beneficio:
- * - Reutilizamos el diseño de pedido.
- * - orders.tsx queda más corto y fácil de mantener.
+ * - Si un pedido tiene muchos clientes o artículos, la pantalla no queda enorme.
  */
 export function OrderSummaryCard({
   order,
   isUpdating,
   onUpdateStatus,
 }: OrderSummaryCardProps) {
+  /**
+   * Controla si mostramos u ocultamos los clientes del pedido.
+   *
+   * Para qué sirve:
+   * - Evita mostrar todo el detalle desde el inicio.
+   *
+   * Beneficio:
+   * - La lista de pedidos queda más limpia.
+   */
+  const [showCustomers, setShowCustomers] = useState(false);
+
+  const allItems = order.customerOrders.flatMap(
+    (customerOrder) => customerOrder.items,
+  );
+
+  const orderPaymentSummary = getOrderPaymentSummary(allItems);
+
   return (
     <AppCard>
       <View className="flex-row items-start justify-between gap-3">
@@ -66,6 +66,14 @@ export function OrderSummaryCard({
 
           <Text className="mt-1 text-sm text-slate-500">
             Clientes: {order.customerOrders.length}
+          </Text>
+
+          <Text className="mt-1 text-sm font-bold text-emerald-700">
+            Pagado: ${orderPaymentSummary.paidTotal.toFixed(2)}
+          </Text>
+
+          <Text className="mt-1 text-sm font-bold text-orange-600">
+            Pendiente: ${orderPaymentSummary.pendingTotal.toFixed(2)}
           </Text>
 
           <View className="mt-2">
@@ -106,48 +114,62 @@ export function OrderSummaryCard({
         ) : null}
       </View>
 
-      <View className="mt-4 gap-3">
-        {order.customerOrders.map((customerOrder) => {
-          const paymentSummary = getOrderPaymentSummary(customerOrder.items);
+      <Pressable
+        className="mt-4 rounded-2xl bg-slate-950 px-4 py-3 active:opacity-80"
+        onPress={() => setShowCustomers((current) => !current)}
+      >
+        <Text className="text-center font-bold text-white">
+          {showCustomers ? "Ocultar clientes" : "Ver clientes del pedido"}
+        </Text>
+      </Pressable>
 
-          return (
-            <View key={customerOrder.id} className="rounded-xl bg-slate-50 p-4">
-              <Text className="font-extrabold text-slate-950">
-                {customerOrder.customer.name}
-              </Text>
+      {showCustomers ? (
+        <View className="mt-4 gap-3">
+          {order.customerOrders.map((customerOrder) => {
+            const paymentSummary = getOrderPaymentSummary(customerOrder.items);
 
-              <Text className="mt-1 text-sm text-slate-500">
-                {customerOrder.customer.phone ?? "Sin teléfono"}
-              </Text>
+            return (
+              <View
+                key={customerOrder.id}
+                className="rounded-xl bg-slate-50 p-4"
+              >
+                <Text className="font-extrabold text-slate-950">
+                  {customerOrder.customer.name}
+                </Text>
 
-              <Text className="mt-1 text-sm text-slate-500">
-                Artículos: {customerOrder.items.length}
-              </Text>
+                <Text className="mt-1 text-sm text-slate-500">
+                  {customerOrder.customer.phone ?? "Sin teléfono"}
+                </Text>
 
-              <Text className="mt-1 text-sm font-bold text-emerald-700">
-                Pagados: {paymentSummary.paidItemsCount}/
-                {paymentSummary.totalItems}
-              </Text>
+                <Text className="mt-1 text-sm text-slate-500">
+                  Artículos: {customerOrder.items.length}
+                </Text>
 
-              <Text className="mt-1 text-sm font-bold text-orange-600">
-                Pendientes: {paymentSummary.pendingItemsCount}
-              </Text>
+                <Text className="mt-1 text-sm font-bold text-emerald-700">
+                  Pagados: {paymentSummary.paidItemsCount}/
+                  {paymentSummary.totalItems}
+                </Text>
 
-              <Text className="mt-1 text-sm font-bold text-emerald-700">
-                Total pagado: ${paymentSummary.paidTotal.toFixed(2)}
-              </Text>
+                <Text className="mt-1 text-sm font-bold text-orange-600">
+                  Pendientes: {paymentSummary.pendingItemsCount}
+                </Text>
 
-              <Text className="mt-1 text-sm font-bold text-orange-600">
-                Total pendiente: ${paymentSummary.pendingTotal.toFixed(2)}
-              </Text>
+                <Text className="mt-1 text-sm font-bold text-emerald-700">
+                  Total pagado: ${paymentSummary.paidTotal.toFixed(2)}
+                </Text>
 
-              <Text className="mt-1 text-sm font-bold text-slate-700">
-                Total cliente: ${Number(customerOrder.total).toFixed(2)}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
+                <Text className="mt-1 text-sm font-bold text-orange-600">
+                  Total pendiente: ${paymentSummary.pendingTotal.toFixed(2)}
+                </Text>
+
+                <Text className="mt-1 text-sm font-bold text-slate-700">
+                  Total cliente: ${Number(customerOrder.total).toFixed(2)}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
     </AppCard>
   );
 }
