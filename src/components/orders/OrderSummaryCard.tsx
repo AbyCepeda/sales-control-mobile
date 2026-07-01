@@ -3,6 +3,7 @@ import { AppButton } from "@/src/components/ui/AppButton";
 import { AppCard } from "@/src/components/ui/AppCard";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
 import type { Order, OrderStatus } from "@/src/features/orders/order.types";
+import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
 import { router } from "expo-router";
 import { Text, View } from "react-native";
 
@@ -107,9 +108,7 @@ export function OrderSummaryCard({
 
       <View className="mt-4 gap-3">
         {order.customerOrders.map((customerOrder) => {
-          const paidItemsCount = customerOrder.items.filter(
-            (item) => item.isPaid,
-          ).length;
+          const paymentSummary = getOrderPaymentSummary(customerOrder.items);
 
           return (
             <View key={customerOrder.id} className="rounded-xl bg-slate-50 p-4">
@@ -126,7 +125,20 @@ export function OrderSummaryCard({
               </Text>
 
               <Text className="mt-1 text-sm font-bold text-emerald-700">
-                Pagados: {paidItemsCount}/{customerOrder.items.length}
+                Pagados: {paymentSummary.paidItemsCount}/
+                {paymentSummary.totalItems}
+              </Text>
+
+              <Text className="mt-1 text-sm font-bold text-orange-600">
+                Pendientes: {paymentSummary.pendingItemsCount}
+              </Text>
+
+              <Text className="mt-1 text-sm font-bold text-emerald-700">
+                Total pagado: ${paymentSummary.paidTotal.toFixed(2)}
+              </Text>
+
+              <Text className="mt-1 text-sm font-bold text-orange-600">
+                Total pendiente: ${paymentSummary.pendingTotal.toFixed(2)}
               </Text>
 
               <Text className="mt-1 text-sm font-bold text-slate-700">
