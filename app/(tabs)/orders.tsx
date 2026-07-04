@@ -54,6 +54,9 @@ export default function OrdersScreen() {
   const [showForm, setShowForm] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
   const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
+  const [expandedItemLocalId, setExpandedItemLocalId] = useState<string | null>(
+    null,
+  );
   const [draftCustomers, setDraftCustomers] = useState<DraftCustomerOrder[]>([
     createEmptyCustomerOrder(),
   ]);
@@ -138,12 +141,25 @@ export default function OrdersScreen() {
    * Agrega artículo a un cliente.
    */
   function handleAddItem(customerLocalId: string) {
+    /**
+     * Creamos el artículo antes de actualizar el estado.
+     *
+     * Para qué sirve:
+     * - Necesitamos conocer su localId para abrirlo automáticamente.
+     *
+     * Beneficio:
+     * - El artículo nuevo aparece listo para editar.
+     */
+    const newItem = createEmptyItem();
+
+    setExpandedItemLocalId(newItem.localId);
+
     setDraftCustomers((current) =>
       current.map((customerOrder) =>
         customerOrder.localId === customerLocalId
           ? {
               ...customerOrder,
-              items: [...customerOrder.items, createEmptyItem()],
+              items: [...customerOrder.items, newItem],
             }
           : customerOrder,
       ),
@@ -368,7 +384,7 @@ export default function OrdersScreen() {
                     customerIndex={customerIndex}
                     customersCount={draftCustomers.length}
                     customerTotal={customerTotal}
-                    defaultExpanded
+                    expandedItemLocalId={expandedItemLocalId}
                     onRemoveCustomer={handleRemoveCustomer}
                     onUpdateCustomer={handleUpdateCustomer}
                     onAddItem={handleAddItem}

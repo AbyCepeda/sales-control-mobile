@@ -64,15 +64,31 @@ type OrderCustomerFormProps = {
    */
   defaultExpanded?: boolean;
 
+  /**
+   * ID local del artículo que debe iniciar abierto.
+   *
+   * Para qué sirve:
+   * - Cuando agregamos un artículo nuevo, podemos abrirlo automáticamente.
+   *
+   * Beneficio:
+   * - El usuario no tiene que presionar "Editar artículo" después de agregarlo.
+   */
+  expandedItemLocalId?: string | null;
+
   onRemoveCustomer: (customerLocalId: string) => void;
+
   onUpdateCustomer: (
     customerLocalId: string,
     field: "name" | "phone" | "notes",
     value: string,
   ) => void;
+
   onAddItem: (customerLocalId: string) => void;
+
   onRemoveItem: (customerLocalId: string, itemLocalId: string) => void;
+
   onToggleItemPaid: (customerLocalId: string, itemLocalId: string) => void;
+
   onUpdateItem: (
     customerLocalId: string,
     itemLocalId: string,
@@ -101,6 +117,7 @@ export function OrderCustomerForm({
   customerTotal,
   itemInputClassName = "",
   defaultExpanded = true,
+  expandedItemLocalId = null,
   onRemoveCustomer,
   onUpdateCustomer,
   onAddItem,
@@ -214,6 +231,9 @@ export function OrderCustomerForm({
                 itemIndex={itemIndex}
                 itemsCount={customerOrder.items.length}
                 inputClassName={itemInputClassName}
+                defaultExpanded={
+                  expandedItemLocalId === item.localId || itemIndex === 0
+                }
                 onRemoveItem={onRemoveItem}
                 onToggleItemPaid={onToggleItemPaid}
                 onUpdateItem={onUpdateItem}
