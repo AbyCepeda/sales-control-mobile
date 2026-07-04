@@ -2,7 +2,9 @@ import { OrderItemForm } from "@/src/components/orders/OrderItemForm";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppInput } from "@/src/components/ui/AppInput";
 import type { CreateOrderItemRequest } from "@/src/features/orders/order.types";
-import { Text, View } from "react-native";
+import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
+import { useState } from "react";
+import { Pressable, Text, View } from "react-native";
 
 /**
  * Artículo temporal usado dentro del formulario de cliente.
@@ -45,70 +47,32 @@ type DraftCustomerOrder = {
  * - Este componente solo se encarga de pintar la UI del cliente.
  */
 type OrderCustomerFormProps = {
-  /**
-   * Cliente temporal que se está editando.
-   */
   customerOrder: DraftCustomerOrder;
-
-  /**
-   * Posición visual del cliente.
-   */
   customerIndex: number;
-
-  /**
-   * Total de clientes en el pedido.
-   *
-   * Para qué sirve:
-   * - Solo mostramos "Quitar" si hay más de un cliente.
-   */
   customersCount: number;
-
-  /**
-   * Total calculado de este cliente.
-   */
   customerTotal: number;
-
-  /**
-   * Fondo extra para inputs de artículos.
-   *
-   * Para qué sirve:
-   * - En algunas pantallas el artículo vive dentro de una card gris.
-   * - Esto permite que los inputs se vean blancos si hace falta.
-   */
   itemInputClassName?: string;
 
   /**
-   * Función para quitar cliente.
+   * Controla si el cliente inicia abierto o cerrado.
+   *
+   * Para qué sirve:
+   * - En formularios grandes podemos iniciar cerrado.
+   *
+   * Beneficio:
+   * - Si el pedido tiene muchos clientes/artículos, no saturamos la pantalla.
    */
-  onRemoveCustomer: (customerLocalId: string) => void;
+  defaultExpanded?: boolean;
 
-  /**
-   * Función para actualizar nombre, teléfono o notas del cliente.
-   */
+  onRemoveCustomer: (customerLocalId: string) => void;
   onUpdateCustomer: (
     customerLocalId: string,
     field: "name" | "phone" | "notes",
     value: string,
   ) => void;
-
-  /**
-   * Función para agregar artículo a este cliente.
-   */
   onAddItem: (customerLocalId: string) => void;
-
-  /**
-   * Función para quitar artículo.
-   */
   onRemoveItem: (customerLocalId: string, itemLocalId: string) => void;
-
-  /**
-   * Función para cambiar Pagado/Pendiente de un artículo.
-   */
   onToggleItemPaid: (customerLocalId: string, itemLocalId: string) => void;
-
-  /**
-   * Función para actualizar campos del artículo.
-   */
   onUpdateItem: (
     customerLocalId: string,
     itemLocalId: string,
@@ -122,15 +86,13 @@ type OrderCustomerFormProps = {
  *
  * Para qué sirve:
  * - Muestra datos del cliente.
- * - Muestra sus artículos.
+ * - Muestra resumen de pago.
+ * - Permite abrir/cerrar sus campos y artículos.
  * - Permite agregar/quitar artículos.
  *
  * Beneficio:
- * - Evitamos repetir el bloque de cliente en:
- *   - Crear pedido
- *   - Editar pedido
- *
- * - Si después cambiamos diseño del cliente, solo tocamos este archivo.
+ * - Crear y editar pedido quedan más limpios.
+ * - Si hay muchos artículos, el usuario puede cerrar clientes que no está editando.
  */
 export function OrderCustomerForm({
   customerOrder,
@@ -138,6 +100,7 @@ export function OrderCustomerForm({
   customersCount,
   customerTotal,
   itemInputClassName = "",
+  defaultExpanded = true,
   onRemoveCustomer,
   onUpdateCustomer,
   onAddItem,
@@ -145,6 +108,16 @@ export function OrderCustomerForm({
   onToggleItemPaid,
   onUpdateItem,
 }: OrderCustomerFormProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  const paymentSummary = getOrderPaymentSummary(
+    customerOrder.items.map((item) => ({
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      isPaid: item.isPaid,
+    })),
+  );
+
   return (
     <View className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <View className="flex-row items-start justify-between gap-3">
@@ -153,8 +126,24 @@ export function OrderCustomerForm({
             Cliente #{customerIndex + 1}
           </Text>
 
+          <Text className="mt-1 text-sm font-bold text-slate-700">
+            {customerOrder.name.trim() || "Sin nombre"}
+          </Text>
+
           <Text className="mt-1 text-sm font-bold text-emerald-700">
             Total cliente: ${customerTotal.toFixed(2)}
+          </Text>
+
+          <Text className="mt-1 text-sm font-bold text-emerald-700">
+            Pagado: ${paymentSummary.paidTotal.toFixed(2)}
+          </Text>
+
+          <Text className="mt-1 text-sm font-bold text-orange-600">
+            Pendiente: ${paymentSummary.pendingTotal.toFixed(2)}
+          </Text>
+
+          <Text className="mt-1 text-sm text-slate-500">
+            Artículos: {customerOrder.items.length}
           </Text>
         </View>
 
@@ -169,64 +158,77 @@ export function OrderCustomerForm({
         ) : null}
       </View>
 
-      <AppInput
-        className="mt-4"
-        inputClassName="bg-white"
-        placeholder="Nombre del cliente"
-        value={customerOrder.name}
-        onChangeText={(value) =>
-          onUpdateCustomer(customerOrder.localId, "name", value)
-        }
-      />
+      <Pressable
+        className="mt-4 rounded-xl bg-slate-950 px-4 py-3 active:opacity-80"
+        onPress={() => setIsExpanded((current) => !current)}
+      >
+        <Text className="text-center font-bold text-white">
+          {isExpanded ? "Ocultar cliente" : "Editar cliente"}
+        </Text>
+      </Pressable>
 
-      <AppInput
-        className="mt-3"
-        inputClassName="bg-white"
-        placeholder="Teléfono del cliente"
-        keyboardType="phone-pad"
-        value={customerOrder.phone}
-        onChangeText={(value) =>
-          onUpdateCustomer(customerOrder.localId, "phone", value)
-        }
-      />
-
-      <AppInput
-        className="mt-3"
-        inputClassName="bg-white"
-        placeholder="Notas del cliente"
-        value={customerOrder.notes}
-        onChangeText={(value) =>
-          onUpdateCustomer(customerOrder.localId, "notes", value)
-        }
-        multiline
-      />
-
-      <Text className="mt-5 text-base font-extrabold text-slate-950">
-        Artículos
-      </Text>
-
-      <View className="mt-3 gap-3">
-        {customerOrder.items.map((item, itemIndex) => (
-          <OrderItemForm
-            key={item.localId}
-            customerLocalId={customerOrder.localId}
-            item={item}
-            itemIndex={itemIndex}
-            itemsCount={customerOrder.items.length}
-            inputClassName={itemInputClassName}
-            onRemoveItem={onRemoveItem}
-            onToggleItemPaid={onToggleItemPaid}
-            onUpdateItem={onUpdateItem}
+      {isExpanded ? (
+        <>
+          <AppInput
+            className="mt-4"
+            inputClassName="bg-white"
+            placeholder="Nombre del cliente"
+            value={customerOrder.name}
+            onChangeText={(value) =>
+              onUpdateCustomer(customerOrder.localId, "name", value)
+            }
           />
-        ))}
-      </View>
 
-      <AppButton
-        title="+ Agregar artículo"
-        variant="secondary"
-        className="mt-4"
-        onPress={() => onAddItem(customerOrder.localId)}
-      />
+          <AppInput
+            className="mt-3"
+            inputClassName="bg-white"
+            placeholder="Teléfono del cliente"
+            keyboardType="phone-pad"
+            value={customerOrder.phone}
+            onChangeText={(value) =>
+              onUpdateCustomer(customerOrder.localId, "phone", value)
+            }
+          />
+
+          <AppInput
+            className="mt-3"
+            inputClassName="bg-white"
+            placeholder="Notas del cliente"
+            value={customerOrder.notes}
+            onChangeText={(value) =>
+              onUpdateCustomer(customerOrder.localId, "notes", value)
+            }
+            multiline
+          />
+
+          <Text className="mt-5 text-base font-extrabold text-slate-950">
+            Artículos
+          </Text>
+
+          <View className="mt-3 gap-3">
+            {customerOrder.items.map((item, itemIndex) => (
+              <OrderItemForm
+                key={item.localId}
+                customerLocalId={customerOrder.localId}
+                item={item}
+                itemIndex={itemIndex}
+                itemsCount={customerOrder.items.length}
+                inputClassName={itemInputClassName}
+                onRemoveItem={onRemoveItem}
+                onToggleItemPaid={onToggleItemPaid}
+                onUpdateItem={onUpdateItem}
+              />
+            ))}
+          </View>
+
+          <AppButton
+            title="+ Agregar artículo"
+            variant="secondary"
+            className="mt-4"
+            onPress={() => onAddItem(customerOrder.localId)}
+          />
+        </>
+      ) : null}
     </View>
   );
 }

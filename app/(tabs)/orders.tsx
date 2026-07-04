@@ -368,6 +368,7 @@ export default function OrdersScreen() {
                     customerIndex={customerIndex}
                     customersCount={draftCustomers.length}
                     customerTotal={customerTotal}
+                    defaultExpanded
                     onRemoveCustomer={handleRemoveCustomer}
                     onUpdateCustomer={handleUpdateCustomer}
                     onAddItem={handleAddItem}

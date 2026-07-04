@@ -9,6 +9,7 @@ import type {
   OrderStatus,
 } from "@/src/features/orders/order.types";
 import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
+import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
 import {
   useGetOrderByIdQuery,
   useUpdateFullOrderMutation,
@@ -228,6 +229,28 @@ export default function OrderDetailScreen() {
 
       return orderTotal + customerTotal;
     }, 0);
+  }, [draftCustomers]);
+
+  /**
+   * Calcula el resumen de pagos del pedido mientras se edita.
+   *
+   * Para qué sirve:
+   * - Junta todos los artículos de todos los clientes.
+   * - Calcula pagados, pendientes, total pagado y total pendiente.
+   *
+   * Beneficio:
+   * - El vendedor ve rápido cuánto falta por cobrar sin revisar cliente por cliente.
+   */
+  const draftPaymentSummary = useMemo(() => {
+    const allItems = draftCustomers.flatMap((customerOrder) =>
+      customerOrder.items.map((item) => ({
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        isPaid: item.isPaid,
+      })),
+    );
+
+    return getOrderPaymentSummary(allItems);
   }, [draftCustomers]);
 
   /**
@@ -561,6 +584,25 @@ export default function OrderDetailScreen() {
             <Text className="mt-1 text-3xl font-extrabold text-white">
               ${draftTotal.toFixed(2)}
             </Text>
+
+            <View className="mt-4 rounded-2xl bg-white/10 p-4">
+              <Text className="text-sm font-bold text-emerald-300">
+                Pagado: ${draftPaymentSummary.paidTotal.toFixed(2)}
+              </Text>
+
+              <Text className="mt-1 text-sm font-bold text-orange-300">
+                Pendiente: ${draftPaymentSummary.pendingTotal.toFixed(2)}
+              </Text>
+
+              <Text className="mt-1 text-sm font-bold text-slate-200">
+                Artículos pagados: {draftPaymentSummary.paidItemsCount}/
+                {draftPaymentSummary.totalItems}
+              </Text>
+
+              <Text className="mt-1 text-sm font-bold text-slate-200">
+                Artículos pendientes: {draftPaymentSummary.pendingItemsCount}
+              </Text>
+            </View>
           </View>
 
           <OrderStatusSelector
@@ -593,6 +635,7 @@ export default function OrderDetailScreen() {
                   customersCount={draftCustomers.length}
                   customerTotal={customerTotal}
                   itemInputClassName="bg-white"
+                  defaultExpanded={customerIndex === 0}
                   onRemoveCustomer={handleRemoveCustomer}
                   onUpdateCustomer={handleUpdateCustomer}
                   onAddItem={handleAddItem}
