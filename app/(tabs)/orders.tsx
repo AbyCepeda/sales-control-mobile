@@ -57,6 +57,10 @@ export default function OrdersScreen() {
   const [expandedItemLocalId, setExpandedItemLocalId] = useState<string | null>(
     null,
   );
+  const [expandedCustomerLocalId, setExpandedCustomerLocalId] = useState<
+    string | null
+  >(null);
+
   const [draftCustomers, setDraftCustomers] = useState<DraftCustomerOrder[]>([
     createEmptyCustomerOrder(),
   ]);
@@ -99,9 +103,23 @@ export default function OrdersScreen() {
    * Agrega otro cliente al pedido.
    */
   function handleAddCustomer() {
-    setDraftCustomers((current) => [...current, createEmptyCustomerOrder()]);
-  }
+    /**
+     * Creamos el cliente antes de actualizar el estado.
+     *
+     * Para qué sirve:
+     * - Necesitamos su localId para abrirlo automáticamente.
+     * - También usamos el localId de su primer artículo para abrirlo.
+     *
+     * Beneficio:
+     * - El cliente nuevo y su primer artículo quedan listos para capturar.
+     */
+    const newCustomer = createEmptyCustomerOrder();
 
+    setExpandedCustomerLocalId(newCustomer.localId);
+    setExpandedItemLocalId(newCustomer.items[0]?.localId ?? null);
+
+    setDraftCustomers((current) => [...current, newCustomer]);
+  }
   /**
    * Quita un cliente del pedido temporal.
    *
@@ -384,6 +402,7 @@ export default function OrdersScreen() {
                     customerIndex={customerIndex}
                     customersCount={draftCustomers.length}
                     customerTotal={customerTotal}
+                    expandedCustomerLocalId={expandedCustomerLocalId}
                     expandedItemLocalId={expandedItemLocalId}
                     onRemoveCustomer={handleRemoveCustomer}
                     onUpdateCustomer={handleUpdateCustomer}

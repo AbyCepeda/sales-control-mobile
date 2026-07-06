@@ -3,7 +3,7 @@ import { AppButton } from "@/src/components/ui/AppButton";
 import { AppInput } from "@/src/components/ui/AppInput";
 import type { CreateOrderItemRequest } from "@/src/features/orders/order.types";
 import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 /**
@@ -65,6 +65,17 @@ type OrderCustomerFormProps = {
   defaultExpanded?: boolean;
 
   /**
+   * ID local del cliente que debe iniciar abierto.
+   *
+   * Para qué sirve:
+   * - Cuando agregamos un cliente nuevo, podemos abrirlo automáticamente.
+   *
+   * Beneficio:
+   * - El usuario no tiene que buscarlo ni presionar "Editar cliente".
+   */
+  expandedCustomerLocalId?: string | null;
+
+  /**
    * ID local del artículo que debe iniciar abierto.
    *
    * Para qué sirve:
@@ -117,6 +128,7 @@ export function OrderCustomerForm({
   customerTotal,
   itemInputClassName = "",
   defaultExpanded = true,
+  expandedCustomerLocalId = null,
   expandedItemLocalId = null,
   onRemoveCustomer,
   onUpdateCustomer,
@@ -125,7 +137,25 @@ export function OrderCustomerForm({
   onToggleItemPaid,
   onUpdateItem,
 }: OrderCustomerFormProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [isExpanded, setIsExpanded] = useState(
+    expandedCustomerLocalId === customerOrder.localId || defaultExpanded,
+  );
+
+  /**
+   * Abre automáticamente el cliente cuando su localId coincide
+   * con el último cliente agregado.
+   *
+   * Para qué sirve:
+   * - Si agregamos un cliente nuevo, lo mostramos abierto.
+   *
+   * Beneficio:
+   * - El usuario puede capturarlo inmediatamente.
+   */
+  useEffect(() => {
+    if (expandedCustomerLocalId === customerOrder.localId) {
+      setIsExpanded(true);
+    }
+  }, [expandedCustomerLocalId, customerOrder.localId]);
 
   const paymentSummary = getOrderPaymentSummary(
     customerOrder.items.map((item) => ({

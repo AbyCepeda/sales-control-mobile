@@ -157,6 +157,9 @@ export default function OrderDetailScreen() {
   const [expandedItemLocalId, setExpandedItemLocalId] = useState<string | null>(
     null,
   );
+  const [expandedCustomerLocalId, setExpandedCustomerLocalId] = useState<
+    string | null
+  >(null);
   const [draftCustomers, setDraftCustomers] = useState<DraftCustomerOrder[]>(
     [],
   );
@@ -260,7 +263,22 @@ export default function OrderDetailScreen() {
    * Agrega otro cliente al pedido.
    */
   function handleAddCustomer() {
-    setDraftCustomers((current) => [...current, createEmptyCustomerOrder()]);
+    /**
+     * Creamos el cliente antes de actualizar el estado.
+     *
+     * Para qué sirve:
+     * - Necesitamos su localId para abrirlo automáticamente.
+     * - También abrimos su primer artículo.
+     *
+     * Beneficio:
+     * - El cliente nuevo queda listo para editar.
+     */
+    const newCustomer = createEmptyCustomerOrder();
+
+    setExpandedCustomerLocalId(newCustomer.localId);
+    setExpandedItemLocalId(newCustomer.items[0]?.localId ?? null);
+
+    setDraftCustomers((current) => [...current, newCustomer]);
   }
 
   /**
@@ -652,6 +670,7 @@ export default function OrderDetailScreen() {
                   customerTotal={customerTotal}
                   itemInputClassName="bg-white"
                   defaultExpanded={customerIndex === 0}
+                  expandedCustomerLocalId={expandedCustomerLocalId}
                   expandedItemLocalId={expandedItemLocalId}
                   onRemoveCustomer={handleRemoveCustomer}
                   onUpdateCustomer={handleUpdateCustomer}
