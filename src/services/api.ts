@@ -9,7 +9,7 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
  * - En celular físico NO sirve localhost.
  * - Por eso usamos la IP local de tu PC.
  */
-const API_BASE_URL = "http://192.168.100.198:3000/api";
+const API_BASE_URL = "https://sales-control-api-eta.vercel.app/api";
 
 /**
  * API principal con RTK Query.
