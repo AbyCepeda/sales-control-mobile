@@ -5,12 +5,19 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 /**
  * URL base del backend.
  *
- * IMPORTANTE:
- * - En celular físico NO sirve localhost.
- * - Por eso usamos la IP local de tu PC.
+ * Para qué sirve:
+ * - Centraliza la URL de la API.
+ * - Permite cambiar entre API local y API publicada sin tocar código.
+ *
+ * Beneficio:
+ * - En desarrollo puedes usar tu backend local.
+ * - En producción puedes usar Vercel.
  */
-const API_BASE_URL = "https://sales-control-api-eta.vercel.app/api";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
+if (!API_BASE_URL) {
+  throw new Error("EXPO_PUBLIC_API_BASE_URL no está configurada.");
+}
 /**
  * API principal con RTK Query.
  *
