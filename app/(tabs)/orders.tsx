@@ -16,6 +16,7 @@ import {
   validateDraftOrder,
 } from "@/src/features/orders/orderDraft.utils";
 import { getOrderStatusLabel } from "@/src/features/orders/orderStatus.utils";
+import { addSyncQueueItem } from "@/src/features/sync/syncQueue.service";
 import {
   useCreateOrderMutation,
   useGetOrdersQuery,
@@ -373,22 +374,22 @@ export default function OrdersScreen() {
    * Guarda el pedido general.
    */
   async function handleSaveOrder() {
+    const validation = validateDraftOrder(draftCustomers);
+
+    if (!validation.isValid) {
+      Alert.alert(validation.title, validation.message);
+      return;
+    }
+
+    const customersPayload = buildOrderCustomersPayload(draftCustomers);
+
+    const payload = {
+      notes: orderNotes.trim() || null,
+      deliveryDate: null,
+      customers: customersPayload,
+    };
+
     try {
-      const validation = validateDraftOrder(draftCustomers);
-
-      if (!validation.isValid) {
-        Alert.alert(validation.title, validation.message);
-        return;
-      }
-
-      const customersPayload = buildOrderCustomersPayload(draftCustomers);
-
-      const payload = {
-        notes: orderNotes.trim() || null,
-        deliveryDate: null,
-        customers: customersPayload,
-      };
-
       console.log("CREATE_ORDER_PAYLOAD:", JSON.stringify(payload, null, 2));
 
       await createOrder(payload).unwrap();
@@ -403,9 +404,27 @@ export default function OrdersScreen() {
     } catch (error: any) {
       console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
 
+      /**
+       * Guardamos el pedido en la cola offline.
+       *
+       * Para qué sirve:
+       * - Si no hay internet o la API falla, conservamos el pedido localmente.
+       *
+       * Beneficio:
+       * - El vendedor no pierde la captura.
+       * - Más adelante podremos sincronizarlo con Neon cuando vuelva internet.
+       */
+      await addSyncQueueItem("CREATE_ORDER", payload);
+
+      setOrderNotes("");
+      setExpandedCustomerLocalId(null);
+      setExpandedItemLocalId(null);
+      setDraftCustomers([createEmptyCustomerOrder()]);
+      setShowForm(false);
+
       Alert.alert(
-        "Error al crear pedido",
-        error?.data?.message ?? "No se pudo crear el pedido.",
+        "Pedido guardado offline",
+        "No se pudo conectar con el servidor, pero el pedido quedó guardado en este dispositivo para sincronizarlo después.",
       );
     }
   }
