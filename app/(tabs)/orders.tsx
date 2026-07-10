@@ -7,6 +7,11 @@ import type {
   CreateOrderItemRequest,
   OrderStatus,
 } from "@/src/features/orders/order.types";
+import {
+  getOrdersCache,
+  saveOrdersCache,
+  type CachedOrdersResponse,
+} from "@/src/features/orders/orderCache.service";
 import type { DraftCustomerOrder } from "@/src/features/orders/orderDraft.types";
 import {
   buildOrderCustomersPayload,
@@ -22,38 +27,13 @@ import {
   useGetOrdersQuery,
   useUpdateOrderMutation,
 } from "@/src/services/ordersApi";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 
-/**
- * Normaliza texto para búsqueda.
- *
- * Para qué sirve:
- * - Convierte a minúsculas.
- * - Quita espacios al inicio/final.
- *
- * Beneficio:
- * - La búsqueda funciona aunque escribas mayúsculas o minúsculas diferentes.
- */
 function normalizeSearchText(value: string) {
   return value.trim().toLowerCase();
 }
 
-/**
- * Pantalla principal de pedidos.
- *
- * Para qué sirve:
- * - Lista pedidos existentes.
- * - Permite crear pedidos nuevos.
- * - Permite buscar pedidos.
- * - Permite filtrar pedidos por estado.
- * - Permite cambiar estado rápido.
- * - Permite abrir detalle para editar pedido completo.
- *
- * Beneficio:
- * - Esta pantalla queda como resumen y alta rápida.
- * - La edición pesada vive en /orders/:id.
- */
 export default function OrdersScreen() {
   const {
     data: ordersData,
@@ -71,51 +51,13 @@ export default function OrdersScreen() {
   const [showForm, setShowForm] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
   const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
-
-  /**
-   * Texto de búsqueda para filtrar pedidos.
-   *
-   * Para qué sirve:
-   * - Permite buscar por número de pedido o nombre de cliente.
-   *
-   * Beneficio:
-   * - Cuando haya muchos pedidos, el vendedor puede encontrar uno rápido.
-   */
   const [searchText, setSearchText] = useState("");
-
-  /**
-   * Filtro de estado del pedido.
-   *
-   * Para qué sirve:
-   * - Permite mostrar todos los pedidos o solo un estado específico.
-   *
-   * Beneficio:
-   * - Puedes revisar rápido pendientes, pagados, entregados o cancelados.
-   */
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
 
-  /**
-   * Guarda el ID del último artículo agregado.
-   *
-   * Para qué sirve:
-   * - Permite abrir automáticamente el artículo recién agregado.
-   *
-   * Beneficio:
-   * - El usuario puede capturarlo de inmediato sin tocar "Editar artículo".
-   */
   const [expandedItemLocalId, setExpandedItemLocalId] = useState<string | null>(
     null,
   );
 
-  /**
-   * Guarda el ID del último cliente agregado.
-   *
-   * Para qué sirve:
-   * - Permite abrir automáticamente el cliente recién agregado.
-   *
-   * Beneficio:
-   * - El usuario puede capturarlo sin buscarlo en la lista.
-   */
   const [expandedCustomerLocalId, setExpandedCustomerLocalId] = useState<
     string | null
   >(null);
@@ -124,19 +66,77 @@ export default function OrdersScreen() {
     createEmptyCustomerOrder(),
   ]);
 
-  const orders = ordersData?.data ?? [];
-
   /**
-   * Pedidos filtrados por búsqueda y estado.
+   * Guarda los pedidos de caché local.
    *
    * Para qué sirve:
-   * - Filtra por ID del pedido.
-   * - Filtra por nombre del cliente.
-   * - Filtra por estado.
+   * - Tener datos disponibles si falla la API.
    *
    * Beneficio:
-   * - La lista se mantiene usable aunque existan muchos pedidos.
+   * - Puedes ver últimos pedidos aunque no haya internet.
    */
+  const [cachedOrdersData, setCachedOrdersData] =
+    useState<CachedOrdersResponse | null>(null);
+
+  const isShowingOfflineCache = Boolean(ordersError && cachedOrdersData);
+
+  const orders = ordersData?.data ?? cachedOrdersData?.data ?? [];
+
+  /**
+   * Si la API responde bien, guardamos esa respuesta en caché local.
+   */
+  useEffect(() => {
+    if (!ordersData) {
+      return;
+    }
+
+    /**
+     * Guardamos ordersData en una constante local.
+     *
+     * Para qué sirve:
+     * - TypeScript entiende que aquí ya no es undefined.
+     *
+     * Beneficio:
+     * - Evitamos el error:
+     *   ApiResponse<Order[]> | undefined no es asignable.
+     */
+    const currentOrdersData = ordersData;
+
+    async function cacheOrders() {
+      try {
+        await saveOrdersCache(currentOrdersData);
+        setCachedOrdersData(currentOrdersData);
+      } catch (error) {
+        console.error("SAVE_ORDERS_CACHE_ERROR:", error);
+      }
+    }
+
+    cacheOrders();
+  }, [ordersData]);
+
+  /**
+   * Si la API falla, intentamos cargar pedidos desde caché.
+   */
+  useEffect(() => {
+    if (!ordersError) {
+      return;
+    }
+
+    async function loadCachedOrders() {
+      try {
+        const cachedOrders = await getOrdersCache();
+
+        if (cachedOrders) {
+          setCachedOrdersData(cachedOrders);
+        }
+      } catch (error) {
+        console.error("GET_ORDERS_CACHE_ERROR:", error);
+      }
+    }
+
+    loadCachedOrders();
+  }, [ordersError]);
+
   const filteredOrders = useMemo(() => {
     const normalizedSearch = normalizeSearchText(searchText);
 
@@ -160,13 +160,6 @@ export default function OrdersScreen() {
     });
   }, [orders, searchText, statusFilter]);
 
-  /**
-   * Calcula el total temporal antes de guardar.
-   *
-   * Beneficio:
-   * - El vendedor ve el total acumulado en tiempo real.
-   * - El backend vuelve a calcular por seguridad.
-   */
   const draftTotal = useMemo(() => {
     return draftCustomers.reduce((orderTotal, customerOrder) => {
       const customerTotal = customerOrder.items.reduce((itemsTotal, item) => {
@@ -177,9 +170,6 @@ export default function OrdersScreen() {
     }, 0);
   }, [draftCustomers]);
 
-  /**
-   * Abre o cierra el formulario de nuevo pedido.
-   */
   function handleToggleForm() {
     setShowForm((current) => {
       const nextValue = !current;
@@ -192,20 +182,7 @@ export default function OrdersScreen() {
     });
   }
 
-  /**
-   * Agrega otro cliente al pedido.
-   */
   function handleAddCustomer() {
-    /**
-     * Creamos el cliente antes de actualizar el estado.
-     *
-     * Para qué sirve:
-     * - Necesitamos su localId para abrirlo automáticamente.
-     * - También usamos el localId de su primer artículo para abrirlo.
-     *
-     * Beneficio:
-     * - El cliente nuevo y su primer artículo quedan listos para capturar.
-     */
     const newCustomer = createEmptyCustomerOrder();
 
     setExpandedCustomerLocalId(newCustomer.localId);
@@ -214,13 +191,6 @@ export default function OrdersScreen() {
     setDraftCustomers((current) => [...current, newCustomer]);
   }
 
-  /**
-   * Quita un cliente del pedido temporal.
-   *
-   * Nota:
-   * - En creación rápida no confirmamos todavía para no hacer pesado el flujo.
-   * - En edición completa ya tenemos confirmación.
-   */
   function handleRemoveCustomer(customerLocalId: string) {
     setDraftCustomers((current) =>
       current.filter(
@@ -229,9 +199,6 @@ export default function OrdersScreen() {
     );
   }
 
-  /**
-   * Actualiza datos del cliente capturado.
-   */
   function handleUpdateCustomer(
     customerLocalId: string,
     field: "name" | "phone" | "notes",
@@ -249,19 +216,7 @@ export default function OrdersScreen() {
     );
   }
 
-  /**
-   * Agrega artículo a un cliente.
-   */
   function handleAddItem(customerLocalId: string) {
-    /**
-     * Creamos el artículo antes de actualizar el estado.
-     *
-     * Para qué sirve:
-     * - Necesitamos conocer su localId para abrirlo automáticamente.
-     *
-     * Beneficio:
-     * - El artículo nuevo aparece listo para editar.
-     */
     const newItem = createEmptyItem();
 
     setExpandedItemLocalId(newItem.localId);
@@ -278,9 +233,6 @@ export default function OrdersScreen() {
     );
   }
 
-  /**
-   * Quita artículo de un cliente.
-   */
   function handleRemoveItem(customerLocalId: string, itemLocalId: string) {
     setDraftCustomers((current) =>
       current.map((customerOrder) =>
@@ -296,16 +248,6 @@ export default function OrdersScreen() {
     );
   }
 
-  /**
-   * Cambia el estado de pago de un artículo.
-   *
-   * Para qué sirve:
-   * - Permite marcar un artículo individual como pagado o pendiente.
-   *
-   * Beneficio:
-   * - No necesitamos marcar todo el pedido como pagado.
-   * - Un pedido puede tener artículos pagados y otros pendientes.
-   */
   function handleToggleItemPaid(customerLocalId: string, itemLocalId: string) {
     setDraftCustomers((current) =>
       current.map((customerOrder) =>
@@ -326,9 +268,6 @@ export default function OrdersScreen() {
     );
   }
 
-  /**
-   * Actualiza un campo de un artículo.
-   */
   function handleUpdateItem(
     customerLocalId: string,
     itemLocalId: string,
@@ -370,9 +309,6 @@ export default function OrdersScreen() {
     );
   }
 
-  /**
-   * Guarda el pedido general.
-   */
   async function handleSaveOrder() {
     const validation = validateDraftOrder(draftCustomers);
 
@@ -390,8 +326,6 @@ export default function OrdersScreen() {
     };
 
     try {
-      console.log("CREATE_ORDER_PAYLOAD:", JSON.stringify(payload, null, 2));
-
       await createOrder(payload).unwrap();
 
       setOrderNotes("");
@@ -404,16 +338,6 @@ export default function OrdersScreen() {
     } catch (error: any) {
       console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
 
-      /**
-       * Guardamos el pedido en la cola offline.
-       *
-       * Para qué sirve:
-       * - Si no hay internet o la API falla, conservamos el pedido localmente.
-       *
-       * Beneficio:
-       * - El vendedor no pierde la captura.
-       * - Más adelante podremos sincronizarlo con Neon cuando vuelva internet.
-       */
       await addSyncQueueItem("CREATE_ORDER", payload);
 
       setOrderNotes("");
@@ -429,12 +353,6 @@ export default function OrdersScreen() {
     }
   }
 
-  /**
-   * Actualiza estado básico de un pedido.
-   *
-   * Para qué sirve:
-   * - Cambiar estado desde la lista sin entrar al detalle.
-   */
   async function handleUpdateOrderStatus(orderId: number, status: OrderStatus) {
     try {
       setUpdatingOrderId(orderId);
@@ -600,13 +518,26 @@ export default function OrdersScreen() {
           </Text>
         </AppCard>
 
+        {isShowingOfflineCache ? (
+          <AppCard className="mt-6 border border-amber-300 bg-amber-50">
+            <Text className="text-base font-extrabold text-amber-800">
+              Modo offline
+            </Text>
+
+            <Text className="mt-1 text-sm text-amber-700">
+              No se pudo conectar con el servidor. Estás viendo los últimos
+              pedidos guardados en este dispositivo.
+            </Text>
+          </AppCard>
+        ) : null}
+
         {isLoadingOrders ? (
           <AppCard className="mt-8 items-center p-8">
             <ActivityIndicator />
 
             <Text className="mt-3 text-slate-500">Cargando pedidos...</Text>
           </AppCard>
-        ) : ordersError ? (
+        ) : ordersError && !cachedOrdersData ? (
           <AppCard className="mt-8">
             <Text className="text-xl font-extrabold text-red-600">
               No se pudieron cargar los pedidos

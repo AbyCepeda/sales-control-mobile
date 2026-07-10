@@ -1,16 +1,17 @@
 /**
- * Base local para WEB.
+ * Base local temporal usando localStorage.
  *
- * Importante:
- * - En navegador evitamos usar expo-sqlite porque puede fallar con WASM.
- * - Para pruebas web usamos localStorage.
+ * Para qué sirve:
+ * - Permite guardar acciones offline en navegador.
+ * - Permite guardar caché de pedidos descargados.
  *
  * Beneficio:
- * - Puedes seguir usando Expo Web sin que truene.
- * - En Android/iOS se usará SQLite real con localDb.native.ts.
+ * - Puedes probar modo offline desde Expo Web sin que falle expo-sqlite.
+ * - Más adelante podemos regresar SQLite para Android/iOS.
  */
 
-const STORAGE_KEY = "sales_control_sync_queue";
+const SYNC_QUEUE_KEY = "sales_control_sync_queue";
+const ORDERS_CACHE_KEY = "sales_control_cached_orders";
 
 type WebSyncQueueItem = {
   id: number;
@@ -27,7 +28,7 @@ function readQueue(): WebSyncQueueItem[] {
     return [];
   }
 
-  const rawQueue = localStorage.getItem(STORAGE_KEY);
+  const rawQueue = localStorage.getItem(SYNC_QUEUE_KEY);
 
   if (!rawQueue) {
     return [];
@@ -45,14 +46,14 @@ function saveQueue(queue: WebSyncQueueItem[]) {
     return;
   }
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+  localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
 }
 
 /**
- * Inicializa la base local web.
+ * Inicializa la base local.
  *
  * En web no creamos tablas reales.
- * Solo nos aseguramos de que exista el arreglo en localStorage.
+ * Solo nos aseguramos de que exista la cola en localStorage.
  */
 export async function initializeLocalDb() {
   const currentQueue = readQueue();
@@ -60,13 +61,13 @@ export async function initializeLocalDb() {
 }
 
 /**
- * Simulación mínima de la misma API que usamos en SQLite.
+ * Simulación mínima de la API que antes usábamos con SQLite.
  *
  * Para qué sirve:
- * - Permite que syncQueue.service.ts funcione igual en web y native.
+ * - Permite que syncQueue.service.ts funcione igual.
  *
  * Beneficio:
- * - No tenemos que cambiar el código del servicio offline.
+ * - No tenemos que cambiar el servicio de cola offline.
  */
 export async function getLocalDb() {
   return {
@@ -165,4 +166,48 @@ export async function getLocalDb() {
       return null;
     },
   };
+}
+
+/**
+ * Guarda la lista de pedidos descargados desde la API.
+ *
+ * Para qué sirve:
+ * - Mantiene una copia local de los pedidos.
+ *
+ * Beneficio:
+ * - Si no hay internet, podemos mostrar la última lista disponible.
+ */
+export async function saveCachedOrders<TOrders>(orders: TOrders) {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+
+  localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(orders));
+}
+
+/**
+ * Lee la lista de pedidos guardada localmente.
+ *
+ * Para qué sirve:
+ * - Recupera los pedidos cuando la API falla.
+ *
+ * Beneficio:
+ * - La pantalla de pedidos no queda vacía cuando no hay internet.
+ */
+export async function getCachedOrders<TOrders>() {
+  if (typeof localStorage === "undefined") {
+    return null;
+  }
+
+  const rawOrders = localStorage.getItem(ORDERS_CACHE_KEY);
+
+  if (!rawOrders) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawOrders) as TOrders;
+  } catch {
+    return null;
+  }
 }

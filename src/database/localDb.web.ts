@@ -1,16 +1,16 @@
 /**
- * Base local para WEB.
+ * Base local para WEB usando localStorage.
  *
- * Importante:
- * - En navegador evitamos usar expo-sqlite porque puede fallar con WASM.
- * - Para pruebas web usamos localStorage.
+ * Para qué sirve:
+ * - Evita problemas de expo-sqlite con WASM en navegador.
+ * - Guarda acciones offline y caché de pedidos.
  *
  * Beneficio:
- * - Puedes seguir usando Expo Web sin que truene.
- * - En Android/iOS se usará SQLite real con localDb.native.ts.
+ * - Puedes probar modo offline desde Expo Web.
  */
 
-const STORAGE_KEY = "sales_control_sync_queue";
+const SYNC_QUEUE_KEY = "sales_control_sync_queue";
+const ORDERS_CACHE_KEY = "sales_control_cached_orders";
 
 type WebSyncQueueItem = {
   id: number;
@@ -27,7 +27,7 @@ function readQueue(): WebSyncQueueItem[] {
     return [];
   }
 
-  const rawQueue = localStorage.getItem(STORAGE_KEY);
+  const rawQueue = localStorage.getItem(SYNC_QUEUE_KEY);
 
   if (!rawQueue) {
     return [];
@@ -45,29 +45,14 @@ function saveQueue(queue: WebSyncQueueItem[]) {
     return;
   }
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+  localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
 }
 
-/**
- * Inicializa la base local web.
- *
- * En web no creamos tablas reales.
- * Solo nos aseguramos de que exista el arreglo en localStorage.
- */
 export async function initializeLocalDb() {
   const currentQueue = readQueue();
   saveQueue(currentQueue);
 }
 
-/**
- * Simulación mínima de la misma API que usamos en SQLite.
- *
- * Para qué sirve:
- * - Permite que syncQueue.service.ts funcione igual en web y native.
- *
- * Beneficio:
- * - No tenemos que cambiar el código del servicio offline.
- */
 export async function getLocalDb() {
   return {
     async execAsync() {
@@ -165,4 +150,30 @@ export async function getLocalDb() {
       return null;
     },
   };
+}
+
+export async function saveCachedOrders<TOrders>(orders: TOrders) {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+
+  localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(orders));
+}
+
+export async function getCachedOrders<TOrders>() {
+  if (typeof localStorage === "undefined") {
+    return null;
+  }
+
+  const rawOrders = localStorage.getItem(ORDERS_CACHE_KEY);
+
+  if (!rawOrders) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawOrders) as TOrders;
+  } catch {
+    return null;
+  }
 }
