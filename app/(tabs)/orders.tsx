@@ -21,6 +21,7 @@ import {
   validateDraftOrder,
 } from "@/src/features/orders/orderDraft.utils";
 import { getOrderStatusLabel } from "@/src/features/orders/orderStatus.utils";
+import { syncPendingOrders } from "@/src/features/sync/syncOrders.service";
 import { addSyncQueueItem } from "@/src/features/sync/syncQueue.service";
 import {
   useCreateOrderMutation,
@@ -65,6 +66,8 @@ export default function OrdersScreen() {
   const [draftCustomers, setDraftCustomers] = useState<DraftCustomerOrder[]>([
     createEmptyCustomerOrder(),
   ]);
+
+  const [isSyncingOrders, setIsSyncingOrders] = useState(false);
 
   /**
    * Guarda los pedidos de caché local.
@@ -380,6 +383,47 @@ export default function OrdersScreen() {
     }
   }
 
+  /**
+   * Sincroniza pedidos guardados offline.
+   *
+   * Para qué sirve:
+   * - Manda a Vercel/Neon los pedidos que quedaron en sync_queue.
+   *
+   * Beneficio:
+   * - El usuario puede recuperar pedidos capturados sin internet.
+   */
+  async function handleSyncPendingOrders() {
+    try {
+      setIsSyncingOrders(true);
+
+      const result = await syncPendingOrders();
+
+      await refetch();
+
+      if (result.total === 0) {
+        Alert.alert(
+          "Sin pendientes",
+          "No hay pedidos offline pendientes por sincronizar.",
+        );
+        return;
+      }
+
+      Alert.alert(
+        "Sincronización terminada",
+        `Pedidos encontrados: ${result.total}\nSincronizados: ${result.synced}\nFallidos: ${result.failed}`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "No se pudieron sincronizar los pedidos.";
+
+      Alert.alert("Error al sincronizar", message);
+    } finally {
+      setIsSyncingOrders(false);
+    }
+  }
+
   return (
     <ScrollView className="flex-1 bg-slate-100">
       <View className="px-5 pb-10 pt-16">
@@ -394,12 +438,23 @@ export default function OrdersScreen() {
             </Text>
           </View>
 
-          <AppButton
-            title={showForm ? "Cerrar" : "+ Nuevo"}
-            onPress={handleToggleForm}
-            className="px-4 py-3"
-            textClassName="text-sm"
-          />
+          <View className="gap-2">
+            <AppButton
+              title={showForm ? "Cerrar" : "+ Nuevo"}
+              onPress={handleToggleForm}
+              className="px-4 py-3"
+              textClassName="text-sm"
+            />
+
+            <AppButton
+              title="Sincronizar"
+              variant="outline"
+              onPress={handleSyncPendingOrders}
+              isLoading={isSyncingOrders}
+              className="px-4 py-3"
+              textClassName="text-sm"
+            />
+          </View>
         </View>
 
         {showForm ? (
