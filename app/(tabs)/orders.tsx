@@ -22,7 +22,10 @@ import {
 } from "@/src/features/orders/orderDraft.utils";
 import { getOrderStatusLabel } from "@/src/features/orders/orderStatus.utils";
 import { syncPendingOrders } from "@/src/features/sync/syncOrders.service";
-import { addSyncQueueItem } from "@/src/features/sync/syncQueue.service";
+import {
+  addSyncQueueItem,
+  getPendingSyncQueueItems,
+} from "@/src/features/sync/syncQueue.service";
 import {
   useCreateOrderMutation,
   useGetOrdersQuery,
@@ -34,6 +37,24 @@ import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 function normalizeSearchText(value: string) {
   return value.trim().toLowerCase();
 }
+
+type PendingOfflineOrder = {
+  id: number;
+  notes: string | null;
+  customers: {
+    name: string;
+    phone: string | null;
+    notes: string | null;
+    items: {
+      sku: string;
+      name: string;
+      description: string | null;
+      quantity: number;
+      unitPrice: number;
+      isPaid?: boolean;
+    }[];
+  }[];
+};
 
 export default function OrdersScreen() {
   const {
@@ -66,6 +87,10 @@ export default function OrdersScreen() {
   const [draftCustomers, setDraftCustomers] = useState<DraftCustomerOrder[]>([
     createEmptyCustomerOrder(),
   ]);
+
+  const [pendingOfflineOrders, setPendingOfflineOrders] = useState<
+    PendingOfflineOrder[]
+  >([]);
 
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
 
@@ -124,6 +149,10 @@ export default function OrdersScreen() {
     if (!ordersError) {
       return;
     }
+
+    useEffect(() => {
+      loadPendingOfflineOrders();
+    }, []);
 
     async function loadCachedOrders() {
       try {
@@ -312,6 +341,41 @@ export default function OrdersScreen() {
     );
   }
 
+  /**
+   * Carga pedidos pendientes guardados offline.
+   *
+   * Para qué sirve:
+   * - Lee sync_queue.
+   * - Busca acciones CREATE_ORDER pendientes.
+   *
+   * Beneficio:
+   * - Podemos mostrar al usuario los pedidos que sí quedaron guardados
+   *   aunque todavía no estén en Neon.
+   */
+  async function loadPendingOfflineOrders() {
+    try {
+      const pendingItems = await getPendingSyncQueueItems();
+
+      const pendingOrders = pendingItems
+        .filter((item) => item.type === "CREATE_ORDER")
+        .map((item) => {
+          const payload = JSON.parse(item.payload) as Omit<
+            PendingOfflineOrder,
+            "id"
+          >;
+
+          return {
+            id: item.id,
+            ...payload,
+          };
+        });
+
+      setPendingOfflineOrders(pendingOrders);
+    } catch (error) {
+      console.error("LOAD_PENDING_OFFLINE_ORDERS_ERROR:", error);
+    }
+  }
+
   async function handleSaveOrder() {
     const validation = validateDraftOrder(draftCustomers);
 
@@ -342,6 +406,8 @@ export default function OrdersScreen() {
       console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
 
       await addSyncQueueItem("CREATE_ORDER", payload);
+
+      await loadPendingOfflineOrders();
 
       setOrderNotes("");
       setExpandedCustomerLocalId(null);
@@ -399,6 +465,7 @@ export default function OrdersScreen() {
       const result = await syncPendingOrders();
 
       await refetch();
+      await loadPendingOfflineOrders();
 
       if (result.total === 0) {
         Alert.alert(
@@ -584,6 +651,77 @@ export default function OrdersScreen() {
               pedidos guardados en este dispositivo.
             </Text>
           </AppCard>
+        ) : null}
+
+        {pendingOfflineOrders.length ? (
+          <View className="mt-6 gap-4">
+            {pendingOfflineOrders.map((offlineOrder) => {
+              const total = offlineOrder.customers.reduce(
+                (orderTotal, customer) => {
+                  const customerTotal = customer.items.reduce(
+                    (itemsTotal, item) => {
+                      return itemsTotal + item.quantity * item.unitPrice;
+                    },
+                    0,
+                  );
+
+                  return orderTotal + customerTotal;
+                },
+                0,
+              );
+
+              const customerNames = offlineOrder.customers
+                .map((customer) => customer.name)
+                .join(", ");
+
+              return (
+                <AppCard
+                  key={offlineOrder.id}
+                  className="border border-amber-300 bg-amber-50"
+                >
+                  <Text className="text-base font-extrabold text-amber-800">
+                    Pedido offline pendiente
+                  </Text>
+
+                  <Text className="mt-1 text-sm text-amber-700">
+                    Este pedido está guardado en este dispositivo, pero todavía
+                    no se ha sincronizado con Neon.
+                  </Text>
+
+                  <View className="mt-4 rounded-2xl bg-white/70 p-4">
+                    <Text className="text-sm font-bold text-slate-700">
+                      Clientes
+                    </Text>
+
+                    <Text className="mt-1 text-base font-extrabold text-slate-950">
+                      {customerNames || "Sin nombre"}
+                    </Text>
+
+                    <Text className="mt-3 text-sm font-bold text-slate-700">
+                      Total
+                    </Text>
+
+                    <Text className="mt-1 text-2xl font-extrabold text-slate-950">
+                      ${total.toFixed(2)}
+                    </Text>
+
+                    <Text className="mt-3 text-sm text-slate-500">
+                      Artículos:{" "}
+                      {offlineOrder.customers.reduce(
+                        (count, customer) => count + customer.items.length,
+                        0,
+                      )}
+                    </Text>
+                  </View>
+
+                  <Text className="mt-4 text-xs text-amber-700">
+                    Presiona “Sincronizar” cuando tengas conexión para subirlo
+                    al servidor.
+                  </Text>
+                </AppCard>
+              );
+            })}
+          </View>
         ) : null}
 
         {isLoadingOrders ? (

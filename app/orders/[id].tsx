@@ -3,9 +3,11 @@ import { OrderStatusSelector } from "@/src/components/orders/OrderStatusSelector
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppCard } from "@/src/components/ui/AppCard";
 import { AppInput } from "@/src/components/ui/AppInput";
+import { getOrdersCache } from "@/src/database/localDb.sqlite";
 import type {
   CreateOrderCustomerRequest,
   CreateOrderItemRequest,
+  Order,
   OrderStatus,
 } from "@/src/features/orders/order.types";
 import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
@@ -164,7 +166,63 @@ export default function OrderDetailScreen() {
     [],
   );
 
-  const order = orderData?.data;
+  /**
+   * Pedido cargado desde caché local.
+   *
+   * Para qué sirve:
+   * - Permite abrir el detalle aunque no haya internet.
+   *
+   * Beneficio:
+   * - Si la API falla, usamos la última copia guardada en el dispositivo.
+   */
+  const [cachedOrder, setCachedOrder] = useState<Order | null>(null);
+
+  /**
+   * Indica si estamos viendo el pedido desde caché offline.
+   */
+  const isShowingOfflineOrder = Boolean(error && cachedOrder);
+
+  /**
+   * Pedido final usado por la pantalla.
+   *
+   * Prioridad:
+   * 1. Pedido desde API.
+   * 2. Pedido desde caché local.
+   */
+  const order = orderData?.data ?? cachedOrder;
+
+  /**
+   * Si falla la API del detalle, buscamos el pedido en la caché local.
+   *
+   * Para qué sirve:
+   * - La lista de pedidos ya guarda una copia local.
+   * - Podemos usar esa copia para abrir el detalle sin internet.
+   *
+   * Beneficio:
+   * - El usuario puede consultar pedidos existentes aunque no tenga red.
+   */
+  useEffect(() => {
+    if (!error || !orderId) {
+      return;
+    }
+
+    async function loadOrderFromCache() {
+      try {
+        const cachedOrders = await getOrdersCache();
+
+        const foundOrder =
+          cachedOrders?.data.find((cachedOrderItem) => {
+            return cachedOrderItem.id === orderId;
+          }) ?? null;
+
+        setCachedOrder(foundOrder);
+      } catch (cacheError) {
+        console.error("GET_CACHED_ORDER_DETAIL_ERROR:", cacheError);
+      }
+    }
+
+    loadOrderFromCache();
+  }, [error, orderId]);
 
   /**
    * Carga el pedido recibido del backend al formulario editable.
@@ -572,10 +630,23 @@ export default function OrderDetailScreen() {
     );
   }
 
-  if (error || !order) {
+  if ((error && !cachedOrder) || !order) {
     return (
       <View className="flex-1 bg-slate-100 px-5 pt-16">
         <AppButton title="Volver" onPress={() => router.back()} />
+
+        {isShowingOfflineOrder ? (
+          <AppCard className="mt-6 border border-amber-300 bg-amber-50">
+            <Text className="text-base font-extrabold text-amber-800">
+              Modo offline
+            </Text>
+
+            <Text className="mt-1 text-sm text-amber-700">
+              Estás viendo una copia guardada del pedido. Algunas acciones de
+              edición pueden requerir conexión.
+            </Text>
+          </AppCard>
+        ) : null}
 
         <AppCard className="mt-6">
           <Text className="text-xl font-extrabold text-red-600">
@@ -692,11 +763,14 @@ export default function OrderDetailScreen() {
         />
 
         <AppButton
-          title="Guardar cambios"
+          title={
+            isShowingOfflineOrder ? "No disponible offline" : "Guardar cambios"
+          }
           variant="success"
           className="mt-6 py-4"
           onPress={handleSaveChanges}
           isLoading={isSaving}
+          disabled={isShowingOfflineOrder}
         />
       </View>
     </ScrollView>
