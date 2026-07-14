@@ -3,13 +3,13 @@ import { OrderStatusSelector } from "@/src/components/orders/OrderStatusSelector
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppCard } from "@/src/components/ui/AppCard";
 import { AppInput } from "@/src/components/ui/AppInput";
-import { getOrdersCache } from "@/src/database/localDb.sqlite";
 import type {
   CreateOrderCustomerRequest,
   CreateOrderItemRequest,
   Order,
   OrderStatus,
 } from "@/src/features/orders/order.types";
+import { getOrdersCache } from "@/src/features/orders/orderCache.service";
 import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
 import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
 import {
@@ -20,28 +20,10 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 
-/**
- * Artículo temporal usado solo en pantalla.
- *
- * Para qué sirve:
- * - Permite editar artículos antes de guardar el pedido.
- *
- * Beneficio:
- * - El backend no se modifica hasta que el usuario presiona "Guardar cambios".
- */
 type DraftOrderItem = CreateOrderItemRequest & {
   localId: string;
 };
 
-/**
- * Cliente temporal dentro del formulario.
- *
- * Para qué sirve:
- * - Permite editar cliente, teléfono, notas y artículos.
- *
- * Beneficio:
- * - Podemos reconstruir el pedido completo antes de enviarlo al backend.
- */
 type DraftCustomerOrder = {
   localId: string;
   name: string;
@@ -50,28 +32,10 @@ type DraftCustomerOrder = {
   items: DraftOrderItem[];
 };
 
-/**
- * Genera un ID local para listas temporales.
- *
- * Para qué sirve:
- * - React necesita una key estable cuando renderizamos listas.
- *
- * Beneficio:
- * - Evita errores visuales al agregar o quitar clientes/artículos.
- */
 function createLocalId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-/**
- * Convierte texto a número de forma segura.
- *
- * Para qué sirve:
- * - Los inputs de React Native trabajan con strings.
- *
- * Beneficio:
- * - Evitamos mandar NaN al backend.
- */
 function parseNumber(value: string) {
   const parsed = Number(value);
 
@@ -82,15 +46,6 @@ function parseNumber(value: string) {
   return parsed;
 }
 
-/**
- * Crea un artículo vacío.
- *
- * Para qué sirve:
- * - Inicializa un artículo nuevo dentro del formulario de edición.
- *
- * Beneficio:
- * - Todo artículo nuevo inicia como pendiente de pago.
- */
 function createEmptyItem(): DraftOrderItem {
   return {
     localId: createLocalId(),
@@ -103,15 +58,6 @@ function createEmptyItem(): DraftOrderItem {
   };
 }
 
-/**
- * Crea un cliente vacío con un artículo inicial.
- *
- * Para qué sirve:
- * - Permite agregar clientes nuevos al pedido.
- *
- * Beneficio:
- * - El usuario puede capturar rápido cliente + artículo.
- */
 function createEmptyCustomerOrder(): DraftCustomerOrder {
   return {
     localId: createLocalId(),
@@ -122,19 +68,6 @@ function createEmptyCustomerOrder(): DraftCustomerOrder {
   };
 }
 
-/**
- * Pantalla detalle de pedido.
- *
- * Para qué sirve:
- * - Permite abrir un pedido específico.
- * - Permite editar clientes y artículos.
- * - Permite agregar más clientes o más artículos.
- * - Permite marcar artículos individuales como pagados.
- *
- * Beneficio:
- * - La pantalla principal queda limpia.
- * - Toda la edición pesada vive en el detalle del pedido.
- */
 export default function OrderDetailScreen() {
   const { id } = useLocalSearchParams<{
     id: string;
@@ -225,14 +158,7 @@ export default function OrderDetailScreen() {
   }, [error, orderId]);
 
   /**
-   * Carga el pedido recibido del backend al formulario editable.
-   *
-   * Para qué sirve:
-   * - Convierte datos reales en datos temporales editables.
-   *
-   * Beneficio:
-   * - El usuario puede modificar el pedido sin tocar la base de datos
-   *   hasta presionar "Guardar cambios".
+   * Carga el pedido recibido del backend o caché al formulario editable.
    */
   useEffect(() => {
     if (!order) {
@@ -255,16 +181,6 @@ export default function OrderDetailScreen() {
           description: item.descriptionSnapshot ?? "",
           quantity: item.quantity,
           unitPrice: Number(item.unitPriceSnapshot),
-
-          /**
-           * Cargamos el estado de pago guardado en backend.
-           *
-           * Para qué sirve:
-           * - Si el artículo ya estaba pagado, se muestra así al abrir el pedido.
-           *
-           * Beneficio:
-           * - No se pierde el estado Pagado/Pendiente al editar.
-           */
           isPaid: item.isPaid ?? false,
         })),
       }),
@@ -275,16 +191,6 @@ export default function OrderDetailScreen() {
     );
   }, [order]);
 
-  /**
-   * Calcula el total general temporal.
-   *
-   * Para qué sirve:
-   * - Muestra el total antes de guardar.
-   *
-   * Beneficio:
-   * - El usuario ve cambios en tiempo real.
-   * - El backend recalcula otra vez por seguridad.
-   */
   const draftTotal = useMemo(() => {
     return draftCustomers.reduce((orderTotal, customerOrder) => {
       const customerTotal = customerOrder.items.reduce((itemsTotal, item) => {
@@ -295,16 +201,6 @@ export default function OrderDetailScreen() {
     }, 0);
   }, [draftCustomers]);
 
-  /**
-   * Calcula el resumen de pagos del pedido mientras se edita.
-   *
-   * Para qué sirve:
-   * - Junta todos los artículos de todos los clientes.
-   * - Calcula pagados, pendientes, total pagado y total pendiente.
-   *
-   * Beneficio:
-   * - El vendedor ve rápido cuánto falta por cobrar sin revisar cliente por cliente.
-   */
   const draftPaymentSummary = useMemo(() => {
     const allItems = draftCustomers.flatMap((customerOrder) =>
       customerOrder.items.map((item) => ({
@@ -317,20 +213,7 @@ export default function OrderDetailScreen() {
     return getOrderPaymentSummary(allItems);
   }, [draftCustomers]);
 
-  /**
-   * Agrega otro cliente al pedido.
-   */
   function handleAddCustomer() {
-    /**
-     * Creamos el cliente antes de actualizar el estado.
-     *
-     * Para qué sirve:
-     * - Necesitamos su localId para abrirlo automáticamente.
-     * - También abrimos su primer artículo.
-     *
-     * Beneficio:
-     * - El cliente nuevo queda listo para editar.
-     */
     const newCustomer = createEmptyCustomerOrder();
 
     setExpandedCustomerLocalId(newCustomer.localId);
@@ -339,16 +222,15 @@ export default function OrderDetailScreen() {
     setDraftCustomers((current) => [...current, newCustomer]);
   }
 
-  /**
-   * Confirma antes de quitar un cliente del pedido.
-   *
-   * Para qué sirve:
-   * - Evita eliminar un cliente por accidente.
-   *
-   * Beneficio:
-   * - El usuario tiene oportunidad de cancelar antes de guardar cambios.
-   */
   function handleRemoveCustomer(customerLocalId: string) {
+    if (isShowingOfflineOrder) {
+      Alert.alert(
+        "No disponible offline",
+        "Para editar este pedido necesitas conexión.",
+      );
+      return;
+    }
+
     Alert.alert(
       "Quitar cliente",
       "¿Seguro que quieres quitar este cliente del pedido?",
@@ -372,9 +254,6 @@ export default function OrderDetailScreen() {
     );
   }
 
-  /**
-   * Actualiza datos del cliente temporal.
-   */
   function handleUpdateCustomer(
     customerLocalId: string,
     field: "name" | "phone" | "notes",
@@ -392,19 +271,15 @@ export default function OrderDetailScreen() {
     );
   }
 
-  /**
-   * Agrega un artículo vacío a un cliente.
-   */
   function handleAddItem(customerLocalId: string) {
-    /**
-     * Creamos el artículo antes de actualizar el estado.
-     *
-     * Para qué sirve:
-     * - Necesitamos su localId para abrirlo automáticamente.
-     *
-     * Beneficio:
-     * - El artículo nuevo queda listo para editarse.
-     */
+    if (isShowingOfflineOrder) {
+      Alert.alert(
+        "No disponible offline",
+        "Para editar este pedido necesitas conexión.",
+      );
+      return;
+    }
+
     const newItem = createEmptyItem();
 
     setExpandedItemLocalId(newItem.localId);
@@ -421,16 +296,15 @@ export default function OrderDetailScreen() {
     );
   }
 
-  /**
-   * Confirma antes de quitar un artículo del cliente.
-   *
-   * Para qué sirve:
-   * - Evita quitar productos por error.
-   *
-   * Beneficio:
-   * - Reduce errores al editar pedidos grandes.
-   */
   function handleRemoveItem(customerLocalId: string, itemLocalId: string) {
+    if (isShowingOfflineOrder) {
+      Alert.alert(
+        "No disponible offline",
+        "Para editar este pedido necesitas conexión.",
+      );
+      return;
+    }
+
     Alert.alert(
       "Quitar artículo",
       "¿Seguro que quieres quitar este artículo del pedido?",
@@ -461,15 +335,6 @@ export default function OrderDetailScreen() {
     );
   }
 
-  /**
-   * Cambia el estado de pago de un artículo.
-   *
-   * Para qué sirve:
-   * - Permite marcar un artículo como pagado o pendiente desde la edición.
-   *
-   * Beneficio:
-   * - El vendedor puede actualizar pagos parciales sin afectar todo el pedido.
-   */
   function handleToggleItemPaid(customerLocalId: string, itemLocalId: string) {
     setDraftCustomers((current) =>
       current.map((customerOrder) =>
@@ -490,15 +355,6 @@ export default function OrderDetailScreen() {
     );
   }
 
-  /**
-   * Actualiza un campo de un artículo.
-   *
-   * Para qué sirve:
-   * - Permite editar SKU, nombre, descripción, cantidad y precio.
-   *
-   * Beneficio:
-   * - El formulario mantiene los cambios antes de guardar.
-   */
   function handleUpdateItem(
     customerLocalId: string,
     itemLocalId: string,
@@ -540,19 +396,16 @@ export default function OrderDetailScreen() {
     );
   }
 
-  /**
-   * Guarda la edición completa.
-   *
-   * Para qué sirve:
-   * - Manda el pedido completo al endpoint PUT /api/orders/:id/full.
-   *
-   * Beneficio:
-   * - El backend reconstruye clientes/artículos.
-   * - El backend recalcula totales.
-   * - El backend conserva el estado pagado/pendiente por artículo.
-   */
   async function handleSaveChanges() {
     try {
+      if (isShowingOfflineOrder) {
+        Alert.alert(
+          "No disponible offline",
+          "Para guardar cambios necesitas conexión.",
+        );
+        return;
+      }
+
       const validation = validateDraftOrder(draftCustomers);
 
       if (!validation.isValid) {
@@ -571,17 +424,6 @@ export default function OrderDetailScreen() {
             description: item.description?.trim() || null,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-
-            /**
-             * Enviamos el estado de pago individual del artículo.
-             *
-             * Para qué sirve:
-             * - El backend puede reconstruir el pedido conservando
-             *   qué artículos están pagados.
-             *
-             * Beneficio:
-             * - Al editar el pedido completo, no se pierde el estado Pagado/Pendiente.
-             */
             isPaid: item.isPaid ?? false,
           })),
         }),
@@ -593,11 +435,6 @@ export default function OrderDetailScreen() {
         deliveryDate: order?.deliveryDate ?? null,
         customers: customersPayload,
       };
-
-      console.log(
-        "UPDATE_FULL_ORDER_PAYLOAD:",
-        JSON.stringify(payload, null, 2),
-      );
 
       await updateFullOrder({
         id: orderId,
@@ -620,7 +457,7 @@ export default function OrderDetailScreen() {
     }
   }
 
-  if (isLoading) {
+  if (isLoading && !cachedOrder) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-100">
         <ActivityIndicator />
@@ -635,26 +472,13 @@ export default function OrderDetailScreen() {
       <View className="flex-1 bg-slate-100 px-5 pt-16">
         <AppButton title="Volver" onPress={() => router.back()} />
 
-        {isShowingOfflineOrder ? (
-          <AppCard className="mt-6 border border-amber-300 bg-amber-50">
-            <Text className="text-base font-extrabold text-amber-800">
-              Modo offline
-            </Text>
-
-            <Text className="mt-1 text-sm text-amber-700">
-              Estás viendo una copia guardada del pedido. Algunas acciones de
-              edición pueden requerir conexión.
-            </Text>
-          </AppCard>
-        ) : null}
-
         <AppCard className="mt-6">
           <Text className="text-xl font-extrabold text-red-600">
             No se pudo cargar el pedido
           </Text>
 
           <Text className="mt-2 text-slate-500">
-            Revisa tu conexión o que el backend esté activo.
+            Revisa tu conexión o que el pedido ya exista en la caché local.
           </Text>
 
           <AppButton
@@ -671,6 +495,19 @@ export default function OrderDetailScreen() {
     <ScrollView className="flex-1 bg-slate-100">
       <View className="px-5 pb-10 pt-16">
         <AppButton title="Volver" onPress={() => router.back()} />
+
+        {isShowingOfflineOrder ? (
+          <AppCard className="mt-6 border border-amber-300 bg-amber-50">
+            <Text className="text-base font-extrabold text-amber-800">
+              Modo offline
+            </Text>
+
+            <Text className="mt-1 text-sm text-amber-700">
+              Estás viendo una copia guardada del pedido. Para guardar cambios
+              necesitas conexión.
+            </Text>
+          </AppCard>
+        ) : null}
 
         <AppCard className="mt-6">
           <Text className="text-2xl font-extrabold text-slate-950">
@@ -714,6 +551,7 @@ export default function OrderDetailScreen() {
             className="mt-5"
             value={status}
             onChange={setStatus}
+            disabled={isShowingOfflineOrder}
           />
 
           <AppInput
@@ -760,6 +598,7 @@ export default function OrderDetailScreen() {
           variant="outline"
           className="mt-5 py-4"
           onPress={handleAddCustomer}
+          disabled={isShowingOfflineOrder}
         />
 
         <AppButton
