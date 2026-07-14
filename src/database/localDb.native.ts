@@ -27,6 +27,8 @@ export async function getLocalDb() {
 }
 
 export async function initializeLocalDb() {
+  console.log("LOCAL_DB_NATIVE_SQLITE_INIT");
+
   const db = await getLocalDb();
 
   await db.execAsync(`

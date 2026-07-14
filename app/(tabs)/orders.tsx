@@ -35,7 +35,15 @@ import {
   useUpdateOrderMutation,
 } from "@/src/services/ordersApi";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  ScrollView,
+  Text,
+  ToastAndroid,
+  View,
+} from "react-native";
 
 function normalizeSearchText(value: string) {
   return value.trim().toLowerCase();
@@ -58,6 +66,18 @@ type PendingOfflineOrder = {
     }[];
   }[];
 };
+
+function showOfflineOrderToast() {
+  const message =
+    "Pedido guardado offline. Se sincronizará cuando vuelva internet.";
+
+  if (Platform.OS === "android") {
+    ToastAndroid.show(message, ToastAndroid.LONG);
+    return;
+  }
+
+  Alert.alert("Pedido guardado offline", message);
+}
 
 export default function OrdersScreen() {
   const {
@@ -160,7 +180,7 @@ export default function OrdersScreen() {
       setPendingOfflineOrders(pendingOrders);
       setPendingOfflineCount(pendingCount);
     } catch (error) {
-      console.error("LOAD_PENDING_OFFLINE_ORDERS_ERROR:", error);
+      console.log("LOAD_PENDING_OFFLINE_ORDERS_ERROR:", error);
     }
   }
 
@@ -179,7 +199,7 @@ export default function OrdersScreen() {
         await saveOrdersCache(currentOrdersData);
         setCachedOrdersData(currentOrdersData);
       } catch (error) {
-        console.error("SAVE_ORDERS_CACHE_ERROR:", error);
+        console.log("SAVE_ORDERS_CACHE_ERROR:", error);
       }
     }
 
@@ -202,7 +222,7 @@ export default function OrdersScreen() {
           setCachedOrdersData(cachedOrders);
         }
       } catch (error) {
-        console.error("GET_ORDERS_CACHE_ERROR:", error);
+        console.log("GET_ORDERS_CACHE_ERROR:", error);
       }
     }
 
@@ -425,9 +445,8 @@ export default function OrdersScreen() {
 
       Alert.alert("Pedido creado", "El pedido se guardó correctamente.");
     } catch (error: any) {
-      console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
-
       await addSyncQueueItem("CREATE_ORDER", payload);
+
       await loadPendingOfflineOrders();
 
       setOrderNotes("");
@@ -436,10 +455,7 @@ export default function OrdersScreen() {
       setDraftCustomers([createEmptyCustomerOrder()]);
       setShowForm(false);
 
-      Alert.alert(
-        "Pedido guardado offline",
-        "No se pudo conectar con el servidor, pero el pedido quedó guardado en este dispositivo para sincronizarlo después.",
-      );
+      showOfflineOrderToast();
     }
   }
 

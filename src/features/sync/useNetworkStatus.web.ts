@@ -1,33 +1,24 @@
 import { useEffect, useState } from "react";
-import { Platform } from "react-native";
 
 /**
- * Hook base seguro.
+ * Hook para detectar conexión en WEB.
  *
  * Para qué sirve:
- * - Evita que Android/iOS intenten usar window.addEventListener.
+ * - Revisa si el navegador tiene conexión usando navigator.onLine.
  *
  * Beneficio:
- * - En web puede usar navigator/window.
- * - En Android/iOS no rompe la app aunque Metro no tome .native.ts.
+ * - Podemos mostrar avisos visuales sin usar NetInfo en web.
  */
 export function useNetworkStatus() {
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => {
+    if (typeof navigator === "undefined") {
+      return true;
+    }
+
+    return navigator.onLine;
+  });
 
   useEffect(() => {
-    if (Platform.OS !== "web") {
-      setIsOnline(true);
-      return;
-    }
-
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (typeof window.addEventListener !== "function") {
-      return;
-    }
-
     function handleOnline() {
       setIsOnline(true);
     }
@@ -36,7 +27,9 @@ export function useNetworkStatus() {
       setIsOnline(false);
     }
 
-    setIsOnline(navigator.onLine);
+    if (typeof window === "undefined") {
+      return;
+    }
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);

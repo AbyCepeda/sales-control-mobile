@@ -29,7 +29,7 @@ export function useAutoSyncOrders(options?: UseAutoSyncOrdersOptions) {
 
         console.log("AUTO_SYNC_ORDERS_RESULT:", result);
       } catch (error) {
-        console.error("AUTO_SYNC_ORDERS_ERROR:", error);
+        console.log("AUTO_SYNC_ORDERS_ERROR:", error);
       } finally {
         isSyncingRef.current = false;
       }

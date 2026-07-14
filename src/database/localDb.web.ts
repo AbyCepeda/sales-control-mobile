@@ -49,6 +49,8 @@ function saveQueue(queue: WebSyncQueueItem[]) {
 }
 
 export async function initializeLocalDb() {
+  console.log("LOCAL_DB_WEB_LOCALSTORAGE_INIT");
+
   const currentQueue = readQueue();
   saveQueue(currentQueue);
 }

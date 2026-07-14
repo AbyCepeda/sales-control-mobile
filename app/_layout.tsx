@@ -4,8 +4,20 @@ import "../global.css";
 import { store } from "@/src/store/store";
 import { Stack } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, LogBox, View } from "react-native";
 import { Provider } from "react-redux";
+
+/**
+ * Oculta logs esperados durante pruebas offline.
+ *
+ * Para qué sirve:
+ * - Evita que React Native muestre pantalla roja por logs viejos o esperados.
+ *
+ * Beneficio:
+ * - Si falla la conexión al crear un pedido, se maneja con toast/offline,
+ *   no con pantalla roja.
+ */
+LogBox.ignoreLogs(["CREATE_ORDER_ERROR", "Network request failed"]);
 
 /**
  * Layout raíz de la app.
@@ -14,26 +26,27 @@ import { Provider } from "react-redux";
  * - Carga Tailwind/NativeWind con global.css.
  * - Hace que Redux esté disponible en toda la app.
  * - Configura navegación principal con Expo Router.
- * - Inicializa la base local SQLite para modo offline.
+ * - Inicializa la base local SQLite/localStorage para modo offline.
  */
 export default function RootLayout() {
   const [isDatabaseReady, setIsDatabaseReady] = useState(false);
 
   useEffect(() => {
     /**
-     * Inicializa SQLite al arrancar la app.
+     * Inicializa la base local al arrancar la app.
      *
      * Para qué sirve:
-     * - Crea la tabla sync_queue si todavía no existe.
+     * - En Android/iOS prepara SQLite.
+     * - En web prepara localStorage.
      *
      * Beneficio:
-     * - La app queda preparada para guardar acciones offline.
+     * - La app queda lista para guardar acciones offline.
      */
     async function prepareLocalDatabase() {
       try {
         await initializeLocalDb();
       } catch (error) {
-        console.error("LOCAL_DB_INIT_ERROR:", error);
+        console.log("LOCAL_DB_INIT_ERROR:", error);
       } finally {
         setIsDatabaseReady(true);
       }
@@ -43,7 +56,7 @@ export default function RootLayout() {
   }, []);
 
   /**
-   * Mientras SQLite se prepara, mostramos una pantalla de carga.
+   * Mientras la base local se prepara, mostramos una pantalla de carga.
    *
    * Beneficio:
    * - Evitamos que la app intente usar la BD local antes de que exista.

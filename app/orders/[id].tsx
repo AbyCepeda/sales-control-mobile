@@ -12,13 +12,22 @@ import type {
 import { getOrdersCache } from "@/src/features/orders/orderCache.service";
 import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
 import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
+import { addSyncQueueItem } from "@/src/features/sync/syncQueue.service";
 import {
   useGetOrderByIdQuery,
   useUpdateFullOrderMutation,
 } from "@/src/services/ordersApi";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  ScrollView,
+  Text,
+  ToastAndroid,
+  View,
+} from "react-native";
 
 type DraftOrderItem = CreateOrderItemRequest & {
   localId: string;
@@ -44,6 +53,18 @@ function parseNumber(value: string) {
   }
 
   return parsed;
+}
+
+function showOfflineUpdateToast() {
+  const message =
+    "Cambios guardados offline. Se sincronizarán cuando vuelva internet.";
+
+  if (Platform.OS === "android") {
+    ToastAndroid.show(message, ToastAndroid.LONG);
+    return;
+  }
+
+  Alert.alert("Cambios guardados offline", message);
 }
 
 function createEmptyItem(): DraftOrderItem {
@@ -132,7 +153,7 @@ export default function OrderDetailScreen() {
    * - Podemos usar esa copia para abrir el detalle sin internet.
    *
    * Beneficio:
-   * - El usuario puede consultar pedidos existentes aunque no tenga red.
+   * - El usuario puede consultar y editar pedidos existentes aunque no tenga red.
    */
   useEffect(() => {
     if (!error || !orderId) {
@@ -150,7 +171,7 @@ export default function OrderDetailScreen() {
 
         setCachedOrder(foundOrder);
       } catch (cacheError) {
-        console.error("GET_CACHED_ORDER_DETAIL_ERROR:", cacheError);
+        console.log("GET_CACHED_ORDER_DETAIL_ERROR:", cacheError);
       }
     }
 
@@ -223,14 +244,6 @@ export default function OrderDetailScreen() {
   }
 
   function handleRemoveCustomer(customerLocalId: string) {
-    if (isShowingOfflineOrder) {
-      Alert.alert(
-        "No disponible offline",
-        "Para editar este pedido necesitas conexión.",
-      );
-      return;
-    }
-
     Alert.alert(
       "Quitar cliente",
       "¿Seguro que quieres quitar este cliente del pedido?",
@@ -272,14 +285,6 @@ export default function OrderDetailScreen() {
   }
 
   function handleAddItem(customerLocalId: string) {
-    if (isShowingOfflineOrder) {
-      Alert.alert(
-        "No disponible offline",
-        "Para editar este pedido necesitas conexión.",
-      );
-      return;
-    }
-
     const newItem = createEmptyItem();
 
     setExpandedItemLocalId(newItem.localId);
@@ -297,14 +302,6 @@ export default function OrderDetailScreen() {
   }
 
   function handleRemoveItem(customerLocalId: string, itemLocalId: string) {
-    if (isShowingOfflineOrder) {
-      Alert.alert(
-        "No disponible offline",
-        "Para editar este pedido necesitas conexión.",
-      );
-      return;
-    }
-
     Alert.alert(
       "Quitar artículo",
       "¿Seguro que quieres quitar este artículo del pedido?",
@@ -397,45 +394,46 @@ export default function OrderDetailScreen() {
   }
 
   async function handleSaveChanges() {
+    const validation = validateDraftOrder(draftCustomers);
+
+    if (!validation.isValid) {
+      Alert.alert(validation.title, validation.message);
+      return;
+    }
+
+    /**
+     * Armamos el payload antes del try.
+     *
+     * Para qué sirve:
+     * - Si el PUT falla, el catch también puede usar este mismo payload.
+     *
+     * Beneficio:
+     * - Podemos guardar la edición offline en sync_queue como UPDATE_ORDER.
+     */
+    const customersPayload: CreateOrderCustomerRequest[] = draftCustomers.map(
+      (customerOrder) => ({
+        name: customerOrder.name.trim(),
+        phone: customerOrder.phone.trim() || null,
+        notes: customerOrder.notes.trim() || null,
+        items: customerOrder.items.map((item) => ({
+          sku: item.sku.trim(),
+          name: item.name.trim(),
+          description: item.description?.trim() || null,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          isPaid: item.isPaid ?? false,
+        })),
+      }),
+    );
+
+    const payload = {
+      status,
+      notes: orderNotes.trim() || null,
+      deliveryDate: order?.deliveryDate ?? null,
+      customers: customersPayload,
+    };
+
     try {
-      if (isShowingOfflineOrder) {
-        Alert.alert(
-          "No disponible offline",
-          "Para guardar cambios necesitas conexión.",
-        );
-        return;
-      }
-
-      const validation = validateDraftOrder(draftCustomers);
-
-      if (!validation.isValid) {
-        Alert.alert(validation.title, validation.message);
-        return;
-      }
-
-      const customersPayload: CreateOrderCustomerRequest[] = draftCustomers.map(
-        (customerOrder) => ({
-          name: customerOrder.name.trim(),
-          phone: customerOrder.phone.trim() || null,
-          notes: customerOrder.notes.trim() || null,
-          items: customerOrder.items.map((item) => ({
-            sku: item.sku.trim(),
-            name: item.name.trim(),
-            description: item.description?.trim() || null,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            isPaid: item.isPaid ?? false,
-          })),
-        }),
-      );
-
-      const payload = {
-        status,
-        notes: orderNotes.trim() || null,
-        deliveryDate: order?.deliveryDate ?? null,
-        customers: customersPayload,
-      };
-
       await updateFullOrder({
         id: orderId,
         body: payload,
@@ -447,13 +445,24 @@ export default function OrderDetailScreen() {
       );
 
       refetch();
-    } catch (error: any) {
-      console.error("UPDATE_FULL_ORDER_ERROR:", JSON.stringify(error, null, 2));
+    } catch {
+      /**
+       * Si no hay internet, guardamos la edición en cola offline.
+       *
+       * Para qué sirve:
+       * - Guardar cambios de artículos/clientes aunque falle la API.
+       *
+       * Beneficio:
+       * - Cuando vuelva internet, syncPendingOrders subirá esta edición.
+       */
+      await addSyncQueueItem("UPDATE_ORDER", {
+        id: orderId,
+        body: payload,
+      });
 
-      Alert.alert(
-        "Error al guardar",
-        error?.data?.message ?? "No se pudo editar el pedido.",
-      );
+      showOfflineUpdateToast();
+
+      router.back();
     }
   }
 
@@ -503,8 +512,8 @@ export default function OrderDetailScreen() {
             </Text>
 
             <Text className="mt-1 text-sm text-amber-700">
-              Estás viendo una copia guardada del pedido. Para guardar cambios
-              necesitas conexión.
+              Estás viendo una copia guardada del pedido. Puedes editarlo y los
+              cambios se sincronizarán cuando vuelva internet.
             </Text>
           </AppCard>
         ) : null}
@@ -551,7 +560,6 @@ export default function OrderDetailScreen() {
             className="mt-5"
             value={status}
             onChange={setStatus}
-            disabled={isShowingOfflineOrder}
           />
 
           <AppInput
@@ -598,18 +606,14 @@ export default function OrderDetailScreen() {
           variant="outline"
           className="mt-5 py-4"
           onPress={handleAddCustomer}
-          disabled={isShowingOfflineOrder}
         />
 
         <AppButton
-          title={
-            isShowingOfflineOrder ? "No disponible offline" : "Guardar cambios"
-          }
+          title="Guardar cambios"
           variant="success"
           className="mt-6 py-4"
           onPress={handleSaveChanges}
           isLoading={isSaving}
-          disabled={isShowingOfflineOrder}
         />
       </View>
     </ScrollView>
