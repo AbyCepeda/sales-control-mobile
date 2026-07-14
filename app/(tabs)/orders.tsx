@@ -24,6 +24,7 @@ import { getOrderStatusLabel } from "@/src/features/orders/orderStatus.utils";
 import { syncPendingOrders } from "@/src/features/sync/syncOrders.service";
 import {
   addSyncQueueItem,
+  countPendingSyncQueueItems,
   getPendingSyncQueueItems,
 } from "@/src/features/sync/syncQueue.service";
 import { useAutoSyncOrders } from "@/src/features/sync/useAutoSyncOrders";
@@ -89,27 +90,77 @@ export default function OrdersScreen() {
     createEmptyCustomerOrder(),
   ]);
 
+  /**
+   * Pedidos que se crearon sin internet y están esperando sincronización.
+   */
   const [pendingOfflineOrders, setPendingOfflineOrders] = useState<
     PendingOfflineOrder[]
   >([]);
 
+  /**
+   * Total de acciones pendientes en la cola offline.
+   */
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
+
+  /**
+   * Loading del botón de sincronización manual.
+   */
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
 
   /**
-   * Guarda los pedidos de caché local.
-   *
-   * Para qué sirve:
-   * - Tener datos disponibles si falla la API.
-   *
-   * Beneficio:
-   * - Puedes ver últimos pedidos aunque no haya internet.
+   * Caché local de pedidos descargados desde API.
    */
   const [cachedOrdersData, setCachedOrdersData] =
     useState<CachedOrdersResponse | null>(null);
 
   const isShowingOfflineCache = Boolean(ordersError && cachedOrdersData);
 
+  /**
+   * Lista final de pedidos.
+   *
+   * Prioridad:
+   * 1. API online
+   * 2. Caché offline
+   */
   const orders = ordersData?.data ?? cachedOrdersData?.data ?? [];
+
+  /**
+   * Carga pedidos pendientes guardados offline.
+   *
+   * Para qué sirve:
+   * - Lee sync_queue.
+   * - Busca acciones CREATE_ORDER pendientes.
+   *
+   * Beneficio:
+   * - El usuario puede ver qué pedidos están guardados localmente
+   *   aunque todavía no estén en Neon.
+   */
+  async function loadPendingOfflineOrders() {
+    try {
+      const pendingItems = await getPendingSyncQueueItems();
+
+      const pendingOrders = pendingItems
+        .filter((item) => item.type === "CREATE_ORDER")
+        .map((item) => {
+          const payload = JSON.parse(item.payload) as Omit<
+            PendingOfflineOrder,
+            "id"
+          >;
+
+          return {
+            id: item.id,
+            ...payload,
+          };
+        });
+
+      const pendingCount = await countPendingSyncQueueItems();
+
+      setPendingOfflineOrders(pendingOrders);
+      setPendingOfflineCount(pendingCount);
+    } catch (error) {
+      console.error("LOAD_PENDING_OFFLINE_ORDERS_ERROR:", error);
+    }
+  }
 
   /**
    * Si la API responde bien, guardamos esa respuesta en caché local.
@@ -119,16 +170,6 @@ export default function OrdersScreen() {
       return;
     }
 
-    /**
-     * Guardamos ordersData en una constante local.
-     *
-     * Para qué sirve:
-     * - TypeScript entiende que aquí ya no es undefined.
-     *
-     * Beneficio:
-     * - Evitamos el error:
-     *   ApiResponse<Order[]> | undefined no es asignable.
-     */
     const currentOrdersData = ordersData;
 
     async function cacheOrders() {
@@ -151,10 +192,6 @@ export default function OrdersScreen() {
       return;
     }
 
-    useEffect(() => {
-      loadPendingOfflineOrders();
-    }, []);
-
     async function loadCachedOrders() {
       try {
         const cachedOrders = await getOrdersCache();
@@ -169,6 +206,23 @@ export default function OrdersScreen() {
 
     loadCachedOrders();
   }, [ordersError]);
+
+  /**
+   * Al entrar a la pantalla cargamos los pedidos pendientes offline.
+   */
+  useEffect(() => {
+    loadPendingOfflineOrders();
+  }, []);
+
+  /**
+   * Sincronización automática cuando vuelve internet.
+   */
+  useAutoSyncOrders({
+    onSyncSuccess: async () => {
+      await refetch();
+      await loadPendingOfflineOrders();
+    },
+  });
 
   const filteredOrders = useMemo(() => {
     const normalizedSearch = normalizeSearchText(searchText);
@@ -342,41 +396,6 @@ export default function OrdersScreen() {
     );
   }
 
-  /**
-   * Carga pedidos pendientes guardados offline.
-   *
-   * Para qué sirve:
-   * - Lee sync_queue.
-   * - Busca acciones CREATE_ORDER pendientes.
-   *
-   * Beneficio:
-   * - Podemos mostrar al usuario los pedidos que sí quedaron guardados
-   *   aunque todavía no estén en Neon.
-   */
-  async function loadPendingOfflineOrders() {
-    try {
-      const pendingItems = await getPendingSyncQueueItems();
-
-      const pendingOrders = pendingItems
-        .filter((item) => item.type === "CREATE_ORDER")
-        .map((item) => {
-          const payload = JSON.parse(item.payload) as Omit<
-            PendingOfflineOrder,
-            "id"
-          >;
-
-          return {
-            id: item.id,
-            ...payload,
-          };
-        });
-
-      setPendingOfflineOrders(pendingOrders);
-    } catch (error) {
-      console.error("LOAD_PENDING_OFFLINE_ORDERS_ERROR:", error);
-    }
-  }
-
   async function handleSaveOrder() {
     const validation = validateDraftOrder(draftCustomers);
 
@@ -407,7 +426,6 @@ export default function OrdersScreen() {
       console.error("CREATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
 
       await addSyncQueueItem("CREATE_ORDER", payload);
-
       await loadPendingOfflineOrders();
 
       setOrderNotes("");
@@ -450,15 +468,6 @@ export default function OrdersScreen() {
     }
   }
 
-  /**
-   * Sincroniza pedidos guardados offline.
-   *
-   * Para qué sirve:
-   * - Manda a Vercel/Neon los pedidos que quedaron en sync_queue.
-   *
-   * Beneficio:
-   * - El usuario puede recuperar pedidos capturados sin internet.
-   */
   async function handleSyncPendingOrders() {
     try {
       setIsSyncingOrders(true);
@@ -492,13 +501,6 @@ export default function OrdersScreen() {
     }
   }
 
-  useAutoSyncOrders({
-    onSyncSuccess: async () => {
-      await refetch();
-      await loadPendingOfflineOrders();
-    },
-  });
-
   return (
     <ScrollView className="flex-1 bg-slate-100">
       <View className="px-5 pb-10 pt-16">
@@ -522,7 +524,11 @@ export default function OrdersScreen() {
             />
 
             <AppButton
-              title="Sincronizar"
+              title={
+                pendingOfflineCount > 0
+                  ? `Sincronizar (${pendingOfflineCount})`
+                  : "Sincronizar"
+              }
               variant="outline"
               onPress={handleSyncPendingOrders}
               isLoading={isSyncingOrders}
@@ -647,6 +653,21 @@ export default function OrdersScreen() {
             Mostrando {filteredOrders.length} de {orders.length} pedidos.
           </Text>
         </AppCard>
+
+        {pendingOfflineCount > 0 ? (
+          <AppCard className="mt-6 border border-amber-300 bg-amber-50">
+            <Text className="text-base font-extrabold text-amber-800">
+              Pedidos pendientes
+            </Text>
+
+            <Text className="mt-1 text-sm text-amber-700">
+              Tienes {pendingOfflineCount} pedido
+              {pendingOfflineCount === 1 ? "" : "s"} guardado
+              {pendingOfflineCount === 1 ? "" : "s"} en este dispositivo
+              esperando sincronización.
+            </Text>
+          </AppCard>
+        ) : null}
 
         {isShowingOfflineCache ? (
           <AppCard className="mt-6 border border-amber-300 bg-amber-50">
