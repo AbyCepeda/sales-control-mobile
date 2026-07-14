@@ -28,6 +28,7 @@ import {
   getPendingSyncQueueItems,
 } from "@/src/features/sync/syncQueue.service";
 import { useAutoSyncOrders } from "@/src/features/sync/useAutoSyncOrders";
+import { useNetworkStatus } from "@/src/features/sync/useNetworkStatus";
 import {
   useCreateOrderMutation,
   useGetOrdersQuery,
@@ -124,6 +125,7 @@ export default function OrdersScreen() {
    */
   const orders = ordersData?.data ?? cachedOrdersData?.data ?? [];
 
+  const { isOnline, isOffline } = useNetworkStatus();
   /**
    * Carga pedidos pendientes guardados offline.
    *
@@ -537,6 +539,32 @@ export default function OrdersScreen() {
             />
           </View>
         </View>
+
+        <AppCard
+          className={`mt-6 border ${
+            isOnline
+              ? "border-emerald-300 bg-emerald-50"
+              : "border-red-300 bg-red-50"
+          }`}
+        >
+          <Text
+            className={`text-base font-extrabold ${
+              isOnline ? "text-emerald-800" : "text-red-800"
+            }`}
+          >
+            {isOnline ? "En línea" : "Sin conexión"}
+          </Text>
+
+          <Text
+            className={`mt-1 text-sm ${
+              isOnline ? "text-emerald-700" : "text-red-700"
+            }`}
+          >
+            {isOnline
+              ? "La app está conectada al servidor."
+              : "Los pedidos nuevos se guardarán offline y se sincronizarán cuando vuelva internet."}
+          </Text>
+        </AppCard>
 
         {showForm ? (
           <AppCard className="mt-6">
