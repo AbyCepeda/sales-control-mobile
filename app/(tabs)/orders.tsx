@@ -26,6 +26,7 @@ import {
   addSyncQueueItem,
   getPendingSyncQueueItems,
 } from "@/src/features/sync/syncQueue.service";
+import { useAutoSyncOrders } from "@/src/features/sync/useAutoSyncOrders";
 import {
   useCreateOrderMutation,
   useGetOrdersQuery,
@@ -490,6 +491,13 @@ export default function OrdersScreen() {
       setIsSyncingOrders(false);
     }
   }
+
+  useAutoSyncOrders({
+    onSyncSuccess: async () => {
+      await refetch();
+      await loadPendingOfflineOrders();
+    },
+  });
 
   return (
     <ScrollView className="flex-1 bg-slate-100">
