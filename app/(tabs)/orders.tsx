@@ -34,7 +34,8 @@ import {
   useGetOrdersQuery,
   useUpdateOrderMutation,
 } from "@/src/services/ordersApi";
-import { useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -150,7 +151,7 @@ export default function OrdersScreen() {
 
   const { isOnline } = useNetworkStatus();
 
-  async function loadPendingOfflineOrders() {
+  const loadPendingOfflineOrders = useCallback(async () => {
     try {
       const pendingItems = await getPendingSyncQueueItems();
 
@@ -190,8 +191,18 @@ export default function OrdersScreen() {
       setPendingOfflineCount(pendingCount);
     } catch (error) {
       console.log("LOAD_PENDING_OFFLINE_ORDERS_ERROR:", error);
+
+      setPendingOfflineOrders([]);
+      setPendingOfflineUpdates([]);
+      setPendingOfflineCount(0);
     }
-  }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadPendingOfflineOrders();
+    }, [loadPendingOfflineOrders]),
+  );
 
   useEffect(() => {
     if (!ordersData) {
@@ -234,7 +245,7 @@ export default function OrdersScreen() {
 
   useEffect(() => {
     loadPendingOfflineOrders();
-  }, []);
+  }, [loadPendingOfflineOrders]);
 
   useAutoSyncOrders({
     onSyncSuccess: async () => {

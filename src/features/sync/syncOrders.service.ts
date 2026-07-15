@@ -1,7 +1,7 @@
 import {
-    deleteSyncedSyncQueueItems,
-    getPendingSyncQueueItems,
-    updateSyncQueueItemStatus,
+  deleteSyncedSyncQueueItems,
+  getPendingSyncQueueItems,
+  updateSyncQueueItemStatus,
 } from "@/src/features/sync/syncQueue.service";
 import { getToken } from "@/src/utils/tokenStorage";
 
@@ -11,12 +11,18 @@ if (!API_BASE_URL) {
   throw new Error("EXPO_PUBLIC_API_BASE_URL no está configurada.");
 }
 
+type UpdateOrderSyncPayload = {
+  id: number;
+  body: unknown;
+};
+
 /**
  * Resultado de sincronización.
  *
  * Para qué sirve:
- * - Saber cuántos pedidos se sincronizaron bien.
- * - Saber cuántos fallaron.
+ * - Saber cuántas acciones offline se encontraron.
+ * - Saber cuántas se sincronizaron bien.
+ * - Saber cuántas fallaron.
  *
  * Beneficio:
  * - Podemos mostrar un mensaje claro al usuario.
@@ -28,22 +34,71 @@ export type SyncPendingOrdersResult = {
 };
 
 /**
- * Sincroniza pedidos pendientes guardados offline.
+ * Sincroniza un pedido nuevo creado offline.
+ */
+async function syncCreateOrder(payload: unknown, token: string) {
+  const response = await fetch(`${API_BASE_URL}/orders`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Error ${response.status}: ${
+        errorText || "No se pudo sincronizar el pedido."
+      }`,
+    );
+  }
+}
+
+/**
+ * Sincroniza una edición completa de pedido hecha offline.
+ */
+async function syncUpdateOrder(payload: UpdateOrderSyncPayload, token: string) {
+  const response = await fetch(`${API_BASE_URL}/orders/${payload.id}/full`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload.body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Error ${response.status}: ${
+        errorText || "No se pudo sincronizar la edición del pedido."
+      }`,
+    );
+  }
+}
+
+/**
+ * Sincroniza acciones pendientes guardadas offline.
  *
  * Para qué sirve:
  * - Lee la cola local sync_queue.
- * - Toma acciones CREATE_ORDER pendientes.
- * - Las manda al backend cuando ya hay conexión.
+ * - Sincroniza CREATE_ORDER.
+ * - Sincroniza UPDATE_ORDER.
  *
  * Beneficio:
- * - Los pedidos capturados sin internet terminan guardándose en Neon.
+ * - Los pedidos nuevos y las ediciones hechas sin internet
+ *   terminan guardándose en Vercel/Neon cuando vuelve la conexión.
  */
 export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
   const pendingItems = await getPendingSyncQueueItems();
 
-  const createOrderItems = pendingItems.filter(
-    (item) => item.type === "CREATE_ORDER",
-  );
+  const orderItems = pendingItems.filter((item) => {
+    return item.type === "CREATE_ORDER" || item.type === "UPDATE_ORDER";
+  });
 
   const token = await getToken();
 
@@ -54,27 +109,16 @@ export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
   let synced = 0;
   let failed = 0;
 
-  for (const item of createOrderItems) {
+  for (const item of orderItems) {
     try {
       const payload = JSON.parse(item.payload);
 
-      const response = await fetch(`${API_BASE_URL}/orders`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      if (item.type === "CREATE_ORDER") {
+        await syncCreateOrder(payload, token);
+      }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        throw new Error(
-          `Error ${response.status}: ${
-            errorText || "No se pudo sincronizar el pedido."
-          }`,
-        );
+      if (item.type === "UPDATE_ORDER") {
+        await syncUpdateOrder(payload as UpdateOrderSyncPayload, token);
       }
 
       await updateSyncQueueItemStatus(item.id, "SYNCED", null);
@@ -90,19 +134,10 @@ export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
     }
   }
 
-  /**
-   * Limpiamos los sincronizados.
-   *
-   * Para qué sirve:
-   * - Borra de la cola los pedidos que ya llegaron al backend.
-   *
-   * Beneficio:
-   * - Evita reenviar pedidos duplicados.
-   */
   await deleteSyncedSyncQueueItems();
 
   return {
-    total: createOrderItems.length,
+    total: orderItems.length,
     synced,
     failed,
   };

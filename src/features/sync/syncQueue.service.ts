@@ -1,19 +1,10 @@
 import { getLocalDb } from "@/src/database/localDb";
 import type {
-    SyncQueueItem,
-    SyncQueueStatus,
-    SyncQueueType,
+  SyncQueueItem,
+  SyncQueueStatus,
+  SyncQueueType,
 } from "@/src/features/sync/syncQueue.types";
 
-/**
- * Agrega una acción a la cola offline.
- *
- * Para qué sirve:
- * - Guarda localmente algo que se debe enviar al backend después.
- *
- * Beneficio:
- * - Si no hay internet o falla la API, no perdemos la información.
- */
 export async function addSyncQueueItem<TPayload>(
   type: SyncQueueType,
   payload: TPayload,
@@ -38,13 +29,14 @@ export async function addSyncQueueItem<TPayload>(
 }
 
 /**
- * Obtiene acciones pendientes de sincronizar.
+ * Lee acciones que todavía necesitan sincronizarse.
  *
  * Para qué sirve:
- * - Leer lo que todavía no se ha mandado al backend.
+ * - Incluye PENDING y FAILED.
  *
  * Beneficio:
- * - Luego podremos recorrer esta lista y sincronizarla.
+ * - Si una sincronización automática falló, el usuario puede reintentar
+ *   con el botón "Sincronizar".
  */
 export async function getPendingSyncQueueItems() {
   const db = await getLocalDb();
@@ -60,22 +52,13 @@ export async function getPendingSyncQueueItems() {
       createdAt,
       updatedAt
     FROM sync_queue
-    WHERE status = ?
+    WHERE status IN (?, ?)
     ORDER BY createdAt ASC
     `,
-    ["PENDING"],
+    ["PENDING", "FAILED"],
   );
 }
 
-/**
- * Cambia el estado de una acción de la cola.
- *
- * Para qué sirve:
- * - Marcar una acción como sincronizada o fallida.
- *
- * Beneficio:
- * - Evitamos reenviar acciones que ya se sincronizaron correctamente.
- */
 export async function updateSyncQueueItemStatus(
   id: number,
   status: SyncQueueStatus,
@@ -97,15 +80,6 @@ export async function updateSyncQueueItemStatus(
   );
 }
 
-/**
- * Elimina acciones que ya fueron sincronizadas.
- *
- * Para qué sirve:
- * - Limpiar la cola local.
- *
- * Beneficio:
- * - Evita que la base local crezca innecesariamente.
- */
 export async function deleteSyncedSyncQueueItems() {
   const db = await getLocalDb();
 
@@ -119,14 +93,13 @@ export async function deleteSyncedSyncQueueItems() {
 }
 
 /**
- * Cuenta cuántas acciones siguen pendientes.
+ * Cuenta acciones que todavía no están sincronizadas.
  *
  * Para qué sirve:
- * - Mostrar después un badge o alerta tipo:
- *   "Tienes 3 pedidos pendientes por sincronizar".
+ * - Cuenta PENDING y FAILED.
  *
  * Beneficio:
- * - El usuario sabrá si hay datos guardados offline.
+ * - El botón "Sincronizar (1)" coincide con lo que realmente se puede reintentar.
  */
 export async function countPendingSyncQueueItems() {
   const db = await getLocalDb();
@@ -137,9 +110,9 @@ export async function countPendingSyncQueueItems() {
     `
     SELECT COUNT(*) as total
     FROM sync_queue
-    WHERE status = ?
+    WHERE status IN (?, ?)
     `,
-    ["PENDING"],
+    ["PENDING", "FAILED"],
   );
 
   return result?.total ?? 0;

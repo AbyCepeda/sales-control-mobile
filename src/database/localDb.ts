@@ -7,7 +7,7 @@
  *
  * Beneficio:
  * - Puedes probar modo offline desde Expo Web sin que falle expo-sqlite.
- * - Más adelante podemos regresar SQLite para Android/iOS.
+ * - En Android/iOS se usa localDb.native.ts con SQLite.
  */
 
 const SYNC_QUEUE_KEY = "sales_control_sync_queue";
@@ -49,26 +49,11 @@ function saveQueue(queue: WebSyncQueueItem[]) {
   localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
 }
 
-/**
- * Inicializa la base local.
- *
- * En web no creamos tablas reales.
- * Solo nos aseguramos de que exista la cola en localStorage.
- */
 export async function initializeLocalDb() {
   const currentQueue = readQueue();
   saveQueue(currentQueue);
 }
 
-/**
- * Simulación mínima de la API que antes usábamos con SQLite.
- *
- * Para qué sirve:
- * - Permite que syncQueue.service.ts funcione igual.
- *
- * Beneficio:
- * - No tenemos que cambiar el servicio de cola offline.
- */
 export async function getLocalDb() {
   return {
     async execAsync() {
@@ -134,10 +119,22 @@ export async function getLocalDb() {
       const normalizedSql = sql.trim().toUpperCase();
 
       if (normalizedSql.includes("FROM SYNC_QUEUE")) {
-        const [status] = params;
+        /**
+         * Soporta:
+         * WHERE status = ?
+         * WHERE status IN (?, ?)
+         *
+         * Para qué sirve:
+         * - Permite leer PENDING y FAILED.
+         *
+         * Beneficio:
+         * - Si una sincronización falló, el botón "Sincronizar"
+         *   puede volver a intentarla.
+         */
+        const statuses = params.map(String);
 
         return queue
-          .filter((item) => item.status === String(status))
+          .filter((item) => statuses.includes(item.status))
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt)) as T[];
       }
 
@@ -152,10 +149,15 @@ export async function getLocalDb() {
         normalizedSql.includes("COUNT(*)") &&
         normalizedSql.includes("FROM SYNC_QUEUE")
       ) {
-        const [status] = params;
+        /**
+         * Soporta:
+         * WHERE status = ?
+         * WHERE status IN (?, ?)
+         */
+        const statuses = params.map(String);
 
-        const total = queue.filter(
-          (item) => item.status === String(status),
+        const total = queue.filter((item) =>
+          statuses.includes(item.status),
         ).length;
 
         return {
@@ -168,15 +170,6 @@ export async function getLocalDb() {
   };
 }
 
-/**
- * Guarda la lista de pedidos descargados desde la API.
- *
- * Para qué sirve:
- * - Mantiene una copia local de los pedidos.
- *
- * Beneficio:
- * - Si no hay internet, podemos mostrar la última lista disponible.
- */
 export async function saveCachedOrders<TOrders>(orders: TOrders) {
   if (typeof localStorage === "undefined") {
     return;
@@ -185,15 +178,6 @@ export async function saveCachedOrders<TOrders>(orders: TOrders) {
   localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(orders));
 }
 
-/**
- * Lee la lista de pedidos guardada localmente.
- *
- * Para qué sirve:
- * - Recupera los pedidos cuando la API falla.
- *
- * Beneficio:
- * - La pantalla de pedidos no queda vacía cuando no hay internet.
- */
 export async function getCachedOrders<TOrders>() {
   if (typeof localStorage === "undefined") {
     return null;

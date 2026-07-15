@@ -120,10 +120,22 @@ export async function getLocalDb() {
       const normalizedSql = sql.trim().toUpperCase();
 
       if (normalizedSql.includes("FROM SYNC_QUEUE")) {
-        const [status] = params;
+        /**
+         * Soporta:
+         * - WHERE status = ?
+         * - WHERE status IN (?, ?)
+         *
+         * Para qué sirve:
+         * - Permite leer PENDING y FAILED.
+         *
+         * Beneficio:
+         * - Si la sincronización automática falla una vez,
+         *   el botón "Sincronizar" puede reintentarla.
+         */
+        const statuses = params.map(String);
 
         return queue
-          .filter((item) => item.status === String(status))
+          .filter((item) => statuses.includes(item.status))
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt)) as T[];
       }
 
@@ -138,10 +150,15 @@ export async function getLocalDb() {
         normalizedSql.includes("COUNT(*)") &&
         normalizedSql.includes("FROM SYNC_QUEUE")
       ) {
-        const [status] = params;
+        /**
+         * Soporta:
+         * - WHERE status = ?
+         * - WHERE status IN (?, ?)
+         */
+        const statuses = params.map(String);
 
-        const total = queue.filter(
-          (item) => item.status === String(status),
+        const total = queue.filter((item) =>
+          statuses.includes(item.status),
         ).length;
 
         return {
