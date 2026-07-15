@@ -67,6 +67,26 @@ type PendingOfflineOrder = {
   }[];
 };
 
+type PendingOfflineUpdate = {
+  id: number;
+  orderId: number;
+  status: OrderStatus;
+  notes: string | null;
+  customers: {
+    name: string;
+    phone: string | null;
+    notes: string | null;
+    items: {
+      sku: string;
+      name: string;
+      description: string | null;
+      quantity: number;
+      unitPrice: number;
+      isPaid?: boolean;
+    }[];
+  }[];
+};
+
 function showOfflineOrderToast() {
   const message =
     "Pedido guardado offline. Se sincronizará cuando vuelva internet.";
@@ -111,52 +131,25 @@ export default function OrdersScreen() {
     createEmptyCustomerOrder(),
   ]);
 
-  /**
-   * Pedidos que se crearon sin internet y están esperando sincronización.
-   */
   const [pendingOfflineOrders, setPendingOfflineOrders] = useState<
     PendingOfflineOrder[]
   >([]);
 
-  /**
-   * Total de acciones pendientes en la cola offline.
-   */
-  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
+  const [pendingOfflineUpdates, setPendingOfflineUpdates] = useState<
+    PendingOfflineUpdate[]
+  >([]);
 
-  /**
-   * Loading del botón de sincronización manual.
-   */
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
 
-  /**
-   * Caché local de pedidos descargados desde API.
-   */
   const [cachedOrdersData, setCachedOrdersData] =
     useState<CachedOrdersResponse | null>(null);
 
   const isShowingOfflineCache = Boolean(ordersError && cachedOrdersData);
-
-  /**
-   * Lista final de pedidos.
-   *
-   * Prioridad:
-   * 1. API online
-   * 2. Caché offline
-   */
   const orders = ordersData?.data ?? cachedOrdersData?.data ?? [];
 
-  const { isOnline, isOffline } = useNetworkStatus();
-  /**
-   * Carga pedidos pendientes guardados offline.
-   *
-   * Para qué sirve:
-   * - Lee sync_queue.
-   * - Busca acciones CREATE_ORDER pendientes.
-   *
-   * Beneficio:
-   * - El usuario puede ver qué pedidos están guardados localmente
-   *   aunque todavía no estén en Neon.
-   */
+  const { isOnline } = useNetworkStatus();
+
   async function loadPendingOfflineOrders() {
     try {
       const pendingItems = await getPendingSyncQueueItems();
@@ -175,18 +168,31 @@ export default function OrdersScreen() {
           };
         });
 
+      const pendingUpdates = pendingItems
+        .filter((item) => item.type === "UPDATE_ORDER")
+        .map((item) => {
+          const payload = JSON.parse(item.payload) as {
+            id: number;
+            body: Omit<PendingOfflineUpdate, "id" | "orderId">;
+          };
+
+          return {
+            id: item.id,
+            orderId: payload.id,
+            ...payload.body,
+          };
+        });
+
       const pendingCount = await countPendingSyncQueueItems();
 
       setPendingOfflineOrders(pendingOrders);
+      setPendingOfflineUpdates(pendingUpdates);
       setPendingOfflineCount(pendingCount);
     } catch (error) {
       console.log("LOAD_PENDING_OFFLINE_ORDERS_ERROR:", error);
     }
   }
 
-  /**
-   * Si la API responde bien, guardamos esa respuesta en caché local.
-   */
   useEffect(() => {
     if (!ordersData) {
       return;
@@ -206,9 +212,6 @@ export default function OrdersScreen() {
     cacheOrders();
   }, [ordersData]);
 
-  /**
-   * Si la API falla, intentamos cargar pedidos desde caché.
-   */
   useEffect(() => {
     if (!ordersError) {
       return;
@@ -229,16 +232,10 @@ export default function OrdersScreen() {
     loadCachedOrders();
   }, [ordersError]);
 
-  /**
-   * Al entrar a la pantalla cargamos los pedidos pendientes offline.
-   */
   useEffect(() => {
     loadPendingOfflineOrders();
   }, []);
 
-  /**
-   * Sincronización automática cuando vuelve internet.
-   */
   useAutoSyncOrders({
     onSyncSuccess: async () => {
       await refetch();
@@ -444,9 +441,8 @@ export default function OrdersScreen() {
       setShowForm(false);
 
       Alert.alert("Pedido creado", "El pedido se guardó correctamente.");
-    } catch (error: any) {
+    } catch {
       await addSyncQueueItem("CREATE_ORDER", payload);
-
       await loadPendingOfflineOrders();
 
       setOrderNotes("");
@@ -475,7 +471,7 @@ export default function OrdersScreen() {
         `El pedido ahora está: ${getOrderStatusLabel(status)}.`,
       );
     } catch (error: any) {
-      console.error("UPDATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
+      console.log("UPDATE_ORDER_ERROR:", JSON.stringify(error, null, 2));
 
       Alert.alert(
         "Error al actualizar",
@@ -505,7 +501,7 @@ export default function OrdersScreen() {
 
       Alert.alert(
         "Sincronización terminada",
-        `Pedidos encontrados: ${result.total}\nSincronizados: ${result.synced}\nFallidos: ${result.failed}`,
+        `Acciones encontradas: ${result.total}\nSincronizadas: ${result.synced}\nFallidas: ${result.failed}`,
       );
     } catch (error) {
       const message =
@@ -578,7 +574,7 @@ export default function OrdersScreen() {
           >
             {isOnline
               ? "La app está conectada al servidor."
-              : "Los pedidos nuevos se guardarán offline y se sincronizarán cuando vuelva internet."}
+              : "Los pedidos nuevos y cambios de pedidos se guardarán offline."}
           </Text>
         </AppCard>
 
@@ -701,14 +697,18 @@ export default function OrdersScreen() {
         {pendingOfflineCount > 0 ? (
           <AppCard className="mt-6 border border-amber-300 bg-amber-50">
             <Text className="text-base font-extrabold text-amber-800">
-              Pedidos pendientes
+              Pendientes por sincronizar
             </Text>
 
             <Text className="mt-1 text-sm text-amber-700">
-              Tienes {pendingOfflineCount} pedido
-              {pendingOfflineCount === 1 ? "" : "s"} guardado
-              {pendingOfflineCount === 1 ? "" : "s"} en este dispositivo
-              esperando sincronización.
+              Tienes {pendingOfflineCount} acción
+              {pendingOfflineCount === 1 ? "" : "es"} pendiente
+              {pendingOfflineCount === 1 ? "" : "s"} en este dispositivo.
+            </Text>
+
+            <Text className="mt-2 text-xs text-amber-700">
+              Nuevos pedidos: {pendingOfflineOrders.length} · Cambios de
+              pedidos: {pendingOfflineUpdates.length}
             </Text>
           </AppCard>
         ) : null}
@@ -724,6 +724,77 @@ export default function OrdersScreen() {
               pedidos guardados en este dispositivo.
             </Text>
           </AppCard>
+        ) : null}
+
+        {pendingOfflineUpdates.length ? (
+          <View className="mt-6 gap-4">
+            {pendingOfflineUpdates.map((offlineUpdate) => {
+              const total = offlineUpdate.customers.reduce(
+                (orderTotal, customer) => {
+                  const customerTotal = customer.items.reduce(
+                    (itemsTotal, item) => {
+                      return itemsTotal + item.quantity * item.unitPrice;
+                    },
+                    0,
+                  );
+
+                  return orderTotal + customerTotal;
+                },
+                0,
+              );
+
+              const customerNames = offlineUpdate.customers
+                .map((customer) => customer.name)
+                .join(", ");
+
+              return (
+                <AppCard
+                  key={`update-${offlineUpdate.id}`}
+                  className="border border-blue-300 bg-blue-50"
+                >
+                  <Text className="text-base font-extrabold text-blue-800">
+                    Cambios de pedido pendientes
+                  </Text>
+
+                  <Text className="mt-1 text-sm text-blue-700">
+                    El pedido #{offlineUpdate.orderId} tiene cambios guardados
+                    en este dispositivo que aún no se han sincronizado.
+                  </Text>
+
+                  <View className="mt-4 rounded-2xl bg-white/70 p-4">
+                    <Text className="text-sm font-bold text-slate-700">
+                      Clientes
+                    </Text>
+
+                    <Text className="mt-1 text-base font-extrabold text-slate-950">
+                      {customerNames || "Sin nombre"}
+                    </Text>
+
+                    <Text className="mt-3 text-sm font-bold text-slate-700">
+                      Total actualizado
+                    </Text>
+
+                    <Text className="mt-1 text-2xl font-extrabold text-slate-950">
+                      ${total.toFixed(2)}
+                    </Text>
+
+                    <Text className="mt-3 text-sm text-slate-500">
+                      Artículos:{" "}
+                      {offlineUpdate.customers.reduce(
+                        (count, customer) => count + customer.items.length,
+                        0,
+                      )}
+                    </Text>
+                  </View>
+
+                  <Text className="mt-4 text-xs text-blue-700">
+                    Presiona “Sincronizar” cuando tengas conexión para subir los
+                    cambios al servidor.
+                  </Text>
+                </AppCard>
+              );
+            })}
+          </View>
         ) : null}
 
         {pendingOfflineOrders.length ? (
@@ -749,7 +820,7 @@ export default function OrdersScreen() {
 
               return (
                 <AppCard
-                  key={offlineOrder.id}
+                  key={`create-${offlineOrder.id}`}
                   className="border border-amber-300 bg-amber-50"
                 >
                   <Text className="text-base font-extrabold text-amber-800">
