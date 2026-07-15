@@ -9,7 +9,10 @@ import type {
   Order,
   OrderStatus,
 } from "@/src/features/orders/order.types";
-import { getOrdersCache } from "@/src/features/orders/orderCache.service";
+import {
+  getOrdersCache,
+  updateCachedOrder,
+} from "@/src/features/orders/orderCache.service";
 import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
 import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
 import { addSyncQueueItem } from "@/src/features/sync/syncQueue.service";
@@ -446,19 +449,12 @@ export default function OrderDetailScreen() {
 
       refetch();
     } catch {
-      /**
-       * Si no hay internet, guardamos la edición en cola offline.
-       *
-       * Para qué sirve:
-       * - Guardar cambios de artículos/clientes aunque falle la API.
-       *
-       * Beneficio:
-       * - Cuando vuelva internet, syncPendingOrders subirá esta edición.
-       */
       await addSyncQueueItem("UPDATE_ORDER", {
         id: orderId,
         body: payload,
       });
+
+      await updateCachedOrder(orderId, payload);
 
       showOfflineUpdateToast();
 
