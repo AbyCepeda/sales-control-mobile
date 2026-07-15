@@ -29,14 +29,73 @@ export async function addSyncQueueItem<TPayload>(
 }
 
 /**
- * Lee acciones que todavía necesitan sincronizarse.
+ * Agrega o reemplaza una edición offline de pedido.
  *
  * Para qué sirve:
- * - Incluye PENDING y FAILED.
+ * - Evita varios UPDATE_ORDER del mismo pedido.
+ * - Conserva solo la última versión editada.
  *
  * Beneficio:
- * - Si una sincronización automática falló, el usuario puede reintentar
- *   con el botón "Sincronizar".
+ * - Si editas el mismo pedido varias veces sin internet,
+ *   solo se sincroniza la última versión.
+ *
+ * Importante:
+ * - Esto NO limita artículos.
+ * - El payload puede traer varios clientes y varios artículos.
+ */
+export async function addOrReplaceUpdateOrderQueueItem<
+  TPayload extends {
+    id: number;
+    body: unknown;
+  },
+>(payload: TPayload) {
+  const pendingItems = await getPendingSyncQueueItems();
+
+  const existingUpdateItem = pendingItems.find((item) => {
+    if (item.type !== "UPDATE_ORDER") {
+      return false;
+    }
+
+    try {
+      const currentPayload = JSON.parse(item.payload) as {
+        id: number;
+      };
+
+      return currentPayload.id === payload.id;
+    } catch {
+      return false;
+    }
+  });
+
+  if (existingUpdateItem) {
+    const db = await getLocalDb();
+    const now = new Date().toISOString();
+
+    await db.runAsync(
+      `
+      UPDATE sync_queue
+      SET
+        payload = ?,
+        status = ?,
+        errorMessage = ?,
+        updatedAt = ?
+      WHERE id = ?
+      `,
+      [JSON.stringify(payload), "PENDING", null, now, existingUpdateItem.id],
+    );
+
+    return;
+  }
+
+  await addSyncQueueItem("UPDATE_ORDER", payload);
+}
+
+/**
+ * Lee acciones que necesitan sincronizarse.
+ *
+ * Incluye:
+ * - PENDING
+ * - FAILED
  */
 export async function getPendingSyncQueueItems() {
   const db = await getLocalDb();
@@ -92,15 +151,6 @@ export async function deleteSyncedSyncQueueItems() {
   );
 }
 
-/**
- * Cuenta acciones que todavía no están sincronizadas.
- *
- * Para qué sirve:
- * - Cuenta PENDING y FAILED.
- *
- * Beneficio:
- * - El botón "Sincronizar (1)" coincide con lo que realmente se puede reintentar.
- */
 export async function countPendingSyncQueueItems() {
   const db = await getLocalDb();
 

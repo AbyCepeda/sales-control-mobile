@@ -505,7 +505,7 @@ export default function OrdersScreen() {
       if (result.total === 0) {
         Alert.alert(
           "Sin pendientes",
-          "No hay pedidos offline pendientes por sincronizar.",
+          "No hay acciones offline pendientes por sincronizar.",
         );
         return;
       }

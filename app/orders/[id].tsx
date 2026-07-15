@@ -15,7 +15,7 @@ import {
 } from "@/src/features/orders/orderCache.service";
 import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
 import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
-import { addSyncQueueItem } from "@/src/features/sync/syncQueue.service";
+import { addOrReplaceUpdateOrderQueueItem } from "@/src/features/sync/syncQueue.service";
 import {
   useGetOrderByIdQuery,
   useUpdateFullOrderMutation,
@@ -123,41 +123,12 @@ export default function OrderDetailScreen() {
     [],
   );
 
-  /**
-   * Pedido cargado desde caché local.
-   *
-   * Para qué sirve:
-   * - Permite abrir el detalle aunque no haya internet.
-   *
-   * Beneficio:
-   * - Si la API falla, usamos la última copia guardada en el dispositivo.
-   */
   const [cachedOrder, setCachedOrder] = useState<Order | null>(null);
 
-  /**
-   * Indica si estamos viendo el pedido desde caché offline.
-   */
   const isShowingOfflineOrder = Boolean(error && cachedOrder);
 
-  /**
-   * Pedido final usado por la pantalla.
-   *
-   * Prioridad:
-   * 1. Pedido desde API.
-   * 2. Pedido desde caché local.
-   */
   const order = orderData?.data ?? cachedOrder;
 
-  /**
-   * Si falla la API del detalle, buscamos el pedido en la caché local.
-   *
-   * Para qué sirve:
-   * - La lista de pedidos ya guarda una copia local.
-   * - Podemos usar esa copia para abrir el detalle sin internet.
-   *
-   * Beneficio:
-   * - El usuario puede consultar y editar pedidos existentes aunque no tenga red.
-   */
   useEffect(() => {
     if (!error || !orderId) {
       return;
@@ -181,9 +152,6 @@ export default function OrderDetailScreen() {
     loadOrderFromCache();
   }, [error, orderId]);
 
-  /**
-   * Carga el pedido recibido del backend o caché al formulario editable.
-   */
   useEffect(() => {
     if (!order) {
       return;
@@ -404,15 +372,6 @@ export default function OrderDetailScreen() {
       return;
     }
 
-    /**
-     * Armamos el payload antes del try.
-     *
-     * Para qué sirve:
-     * - Si el PUT falla, el catch también puede usar este mismo payload.
-     *
-     * Beneficio:
-     * - Podemos guardar la edición offline en sync_queue como UPDATE_ORDER.
-     */
     const customersPayload: CreateOrderCustomerRequest[] = draftCustomers.map(
       (customerOrder) => ({
         name: customerOrder.name.trim(),
@@ -449,7 +408,7 @@ export default function OrderDetailScreen() {
 
       refetch();
     } catch {
-      await addSyncQueueItem("UPDATE_ORDER", {
+      await addOrReplaceUpdateOrderQueueItem({
         id: orderId,
         body: payload,
       });

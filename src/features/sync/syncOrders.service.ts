@@ -16,26 +16,12 @@ type UpdateOrderSyncPayload = {
   body: unknown;
 };
 
-/**
- * Resultado de sincronización.
- *
- * Para qué sirve:
- * - Saber cuántas acciones offline se encontraron.
- * - Saber cuántas se sincronizaron bien.
- * - Saber cuántas fallaron.
- *
- * Beneficio:
- * - Podemos mostrar un mensaje claro al usuario.
- */
 export type SyncPendingOrdersResult = {
   total: number;
   synced: number;
   failed: number;
 };
 
-/**
- * Sincroniza un pedido nuevo creado offline.
- */
 async function syncCreateOrder(payload: unknown, token: string) {
   const response = await fetch(`${API_BASE_URL}/orders`, {
     method: "POST",
@@ -57,9 +43,6 @@ async function syncCreateOrder(payload: unknown, token: string) {
   }
 }
 
-/**
- * Sincroniza una edición completa de pedido hecha offline.
- */
 async function syncUpdateOrder(payload: UpdateOrderSyncPayload, token: string) {
   const response = await fetch(`${API_BASE_URL}/orders/${payload.id}/full`, {
     method: "PUT",
@@ -82,16 +65,9 @@ async function syncUpdateOrder(payload: UpdateOrderSyncPayload, token: string) {
 }
 
 /**
- * Sincroniza acciones pendientes guardadas offline.
- *
- * Para qué sirve:
- * - Lee la cola local sync_queue.
- * - Sincroniza CREATE_ORDER.
- * - Sincroniza UPDATE_ORDER.
- *
- * Beneficio:
- * - Los pedidos nuevos y las ediciones hechas sin internet
- *   terminan guardándose en Vercel/Neon cuando vuelve la conexión.
+ * Sincroniza acciones offline:
+ * - CREATE_ORDER: pedidos nuevos.
+ * - UPDATE_ORDER: ediciones de pedidos existentes.
  */
 export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
   const pendingItems = await getPendingSyncQueueItems();
