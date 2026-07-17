@@ -8,6 +8,7 @@ import type {
   CreateOrderItemRequest,
   Order,
   OrderStatus,
+  PaymentMethod,
 } from "@/src/features/orders/order.types";
 import {
   getOrdersCache,
@@ -17,7 +18,9 @@ import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
 import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
 import { addOrReplaceUpdateOrderQueueItem } from "@/src/features/sync/syncQueue.service";
 import {
+  useCreateOrderPaymentMutation,
   useGetOrderByIdQuery,
+  useGetOrderPaymentSummaryQuery,
   useUpdateFullOrderMutation,
 } from "@/src/services/ordersApi";
 import { router, useLocalSearchParams } from "expo-router";
@@ -108,22 +111,38 @@ export default function OrderDetailScreen() {
     skip: !orderId,
   });
 
+  const { data: paymentSummaryData, refetch: refetchPaymentSummary } =
+    useGetOrderPaymentSummaryQuery(orderId, {
+      skip: !orderId,
+    });
+
   const [updateFullOrder, { isLoading: isSaving }] =
     useUpdateFullOrderMutation();
 
+  const [createOrderPayment, { isLoading: isCreatingPayment }] =
+    useCreateOrderPaymentMutation();
+
   const [status, setStatus] = useState<OrderStatus>("PENDING");
   const [orderNotes, setOrderNotes] = useState("");
+
   const [expandedItemLocalId, setExpandedItemLocalId] = useState<string | null>(
     null,
   );
+
   const [expandedCustomerLocalId, setExpandedCustomerLocalId] = useState<
     string | null
   >(null);
+
   const [draftCustomers, setDraftCustomers] = useState<DraftCustomerOrder[]>(
     [],
   );
 
   const [cachedOrder, setCachedOrder] = useState<Order | null>(null);
+
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
+  const [paymentNotes, setPaymentNotes] = useState("");
 
   const isShowingOfflineOrder = Boolean(error && cachedOrder);
 
@@ -204,6 +223,34 @@ export default function OrderDetailScreen() {
 
     return getOrderPaymentSummary(allItems);
   }, [draftCustomers]);
+
+  const savedPaymentSummary = useMemo(() => {
+    const totalAmount = Number(order?.total ?? 0);
+
+    const paidAmount = (order?.payments ?? []).reduce((total, payment) => {
+      return total + Number(payment.amount);
+    }, 0);
+
+    const pendingAmount = Math.max(totalAmount - paidAmount, 0);
+
+    return {
+      totalAmount,
+      paidAmount,
+      pendingAmount,
+      isFullyPaid: paidAmount >= totalAmount && totalAmount > 0,
+      hasPayments: paidAmount > 0,
+    };
+  }, [order]);
+
+  const paymentSummary = paymentSummaryData?.data
+    ? {
+        totalAmount: Number(paymentSummaryData.data.totalAmount),
+        paidAmount: Number(paymentSummaryData.data.paidAmount),
+        pendingAmount: Number(paymentSummaryData.data.pendingAmount),
+        isFullyPaid: paymentSummaryData.data.isFullyPaid,
+        hasPayments: paymentSummaryData.data.hasPayments,
+      }
+    : savedPaymentSummary;
 
   function handleAddCustomer() {
     const newCustomer = createEmptyCustomerOrder();
@@ -421,6 +468,41 @@ export default function OrderDetailScreen() {
     }
   }
 
+  async function handleCreatePayment() {
+    const amount = parseNumber(paymentAmount);
+
+    if (amount <= 0) {
+      Alert.alert("Monto inválido", "El monto debe ser mayor a cero.");
+      return;
+    }
+
+    try {
+      await createOrderPayment({
+        id: orderId,
+        body: {
+          amount,
+          method: paymentMethod,
+          notes: paymentNotes.trim() || null,
+        },
+      }).unwrap();
+
+      setPaymentAmount("");
+      setPaymentMethod("CASH");
+      setPaymentNotes("");
+      setShowPaymentForm(false);
+
+      await refetch();
+      await refetchPaymentSummary();
+
+      Alert.alert("Pago registrado", "El abono se guardó correctamente.");
+    } catch (paymentError: any) {
+      Alert.alert(
+        "Error al registrar pago",
+        paymentError?.data?.message ?? "No se pudo registrar el pago.",
+      );
+    }
+  }
+
   if (isLoading && !cachedOrder) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-100">
@@ -493,11 +575,13 @@ export default function OrderDetailScreen() {
 
             <View className="mt-4 rounded-2xl bg-white/10 p-4">
               <Text className="text-sm font-bold text-emerald-300">
-                Pagado: ${draftPaymentSummary.paidTotal.toFixed(2)}
+                Pagado por artículos: $
+                {draftPaymentSummary.paidTotal.toFixed(2)}
               </Text>
 
               <Text className="mt-1 text-sm font-bold text-orange-300">
-                Pendiente: ${draftPaymentSummary.pendingTotal.toFixed(2)}
+                Pendiente por artículos: $
+                {draftPaymentSummary.pendingTotal.toFixed(2)}
               </Text>
 
               <Text className="mt-1 text-sm font-bold text-slate-200">
@@ -524,6 +608,140 @@ export default function OrderDetailScreen() {
             onChangeText={setOrderNotes}
             multiline
           />
+        </AppCard>
+
+        <AppCard className="mt-6 border border-emerald-200 bg-emerald-50">
+          <Text className="text-lg font-extrabold text-emerald-900">
+            Pagos del pedido
+          </Text>
+
+          <View className="mt-4 rounded-2xl bg-white/80 p-4">
+            <Text className="text-sm font-bold text-slate-600">
+              Total del pedido
+            </Text>
+
+            <Text className="mt-1 text-2xl font-extrabold text-slate-950">
+              ${paymentSummary.totalAmount.toFixed(2)}
+            </Text>
+
+            <Text className="mt-4 text-sm font-bold text-slate-600">
+              Pagado en abonos
+            </Text>
+
+            <Text className="mt-1 text-2xl font-extrabold text-emerald-700">
+              ${paymentSummary.paidAmount.toFixed(2)}
+            </Text>
+
+            <Text className="mt-4 text-sm font-bold text-slate-600">
+              Pendiente
+            </Text>
+
+            <Text className="mt-1 text-2xl font-extrabold text-orange-600">
+              ${paymentSummary.pendingAmount.toFixed(2)}
+            </Text>
+
+            <Text className="mt-4 text-sm font-bold text-slate-500">
+              Estado de pago:{" "}
+              {paymentSummary.isFullyPaid
+                ? "Pagado"
+                : paymentSummary.hasPayments
+                  ? "Abonado"
+                  : "Sin pagos"}
+            </Text>
+          </View>
+
+          {order.payments.length ? (
+            <View className="mt-5 rounded-2xl bg-white/80 p-4">
+              <Text className="text-base font-extrabold text-slate-950">
+                Historial de abonos
+              </Text>
+
+              <View className="mt-3 gap-3">
+                {order.payments.map((payment) => (
+                  <View
+                    key={payment.id}
+                    className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                  >
+                    <Text className="text-base font-extrabold text-slate-950">
+                      ${Number(payment.amount).toFixed(2)}
+                    </Text>
+
+                    <Text className="mt-1 text-sm font-bold text-slate-600">
+                      Método: {payment.method}
+                    </Text>
+
+                    {payment.notes ? (
+                      <Text className="mt-1 text-sm text-slate-500">
+                        {payment.notes}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          <AppButton
+            title={showPaymentForm ? "Cancelar abono" : "Registrar abono"}
+            variant={showPaymentForm ? "outline" : "success"}
+            className="mt-5 py-4"
+            onPress={() => setShowPaymentForm((current) => !current)}
+          />
+
+          {showPaymentForm ? (
+            <View className="mt-5 rounded-2xl bg-white/80 p-4">
+              <AppInput
+                label="Monto del abono"
+                placeholder="Ej. 300"
+                value={paymentAmount}
+                onChangeText={setPaymentAmount}
+                keyboardType="numeric"
+              />
+
+              <Text className="mt-5 font-extrabold text-slate-950">
+                Método de pago
+              </Text>
+
+              <View className="mt-3 flex-row flex-wrap gap-2">
+                {[
+                  { label: "Efectivo", value: "CASH" as const },
+                  { label: "Transferencia", value: "TRANSFER" as const },
+                  { label: "Tarjeta", value: "CARD" as const },
+                  { label: "Otro", value: "OTHER" as const },
+                ].map((method) => {
+                  const isSelected = paymentMethod === method.value;
+
+                  return (
+                    <AppButton
+                      key={method.value}
+                      title={method.label}
+                      variant={isSelected ? "primary" : "outline"}
+                      className="px-3 py-2"
+                      textClassName="text-xs"
+                      onPress={() => setPaymentMethod(method.value)}
+                    />
+                  );
+                })}
+              </View>
+
+              <AppInput
+                className="mt-5"
+                label="Notas"
+                placeholder="Ej. Abono inicial"
+                value={paymentNotes}
+                onChangeText={setPaymentNotes}
+                multiline
+              />
+
+              <AppButton
+                title="Guardar abono"
+                variant="success"
+                className="mt-5 py-4"
+                onPress={handleCreatePayment}
+                isLoading={isCreatingPayment}
+              />
+            </View>
+          ) : null}
         </AppCard>
 
         <View className="mt-6 gap-5">

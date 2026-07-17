@@ -6,13 +6,14 @@
 export type OrderStatus = "PENDING" | "PAID" | "DELIVERED" | "CANCELLED";
 
 /**
+ * Métodos de pago.
+ *
+ * Deben coincidir con el enum PaymentMethod del backend.
+ */
+export type PaymentMethod = "CASH" | "TRANSFER" | "CARD" | "OTHER";
+
+/**
  * Cliente relacionado a un pedido.
- *
- * Nueva lógica:
- * - El cliente puede crearse automáticamente desde la pantalla de pedidos.
- *
- * Beneficio:
- * - El vendedor no necesita registrar clientes antes.
  */
 export type OrderCustomer = {
   id: number;
@@ -36,10 +37,6 @@ export type OrderSeller = {
 
 /**
  * Producto relacionado al item.
- *
- * Importante:
- * - El producto se crea o actualiza automáticamente por SKU.
- * - El pedido conserva snapshots históricos.
  */
 export type OrderProduct = {
   id: number;
@@ -55,13 +52,6 @@ export type OrderProduct = {
 
 /**
  * Item comprado por un cliente dentro de un pedido.
- *
- * Para qué sirve:
- * - Representa un artículo ya guardado en backend.
- *
- * Beneficio:
- * - Conserva el precio, nombre y SKU originales aunque el producto cambie después.
- * - Ahora también indica si ese artículo individual ya fue pagado.
  */
 export type OrderItem = {
   id: number;
@@ -82,14 +72,6 @@ export type OrderItem = {
 
 /**
  * Cliente dentro de un pedido general.
- *
- * Ejemplo:
- * Pedido #1
- * - Cliente María
- *   - Perfume
- *   - Crema
- * - Cliente Juan
- *   - Shampoo
  */
 export type CustomerOrder = {
   id: number;
@@ -102,6 +84,30 @@ export type CustomerOrder = {
 
   customer: OrderCustomer;
   items: OrderItem[];
+};
+
+/**
+ * Pago o abono registrado para un pedido.
+ */
+export type OrderPayment = {
+  id: number;
+  orderId: number;
+  amount: string;
+  method: PaymentMethod;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * Resumen de pagos de un pedido.
+ */
+export type OrderPaymentSummary = {
+  totalAmount: string;
+  paidAmount: string;
+  pendingAmount: string;
+  isFullyPaid: boolean;
+  hasPayments: boolean;
 };
 
 /**
@@ -120,15 +126,11 @@ export type Order = {
 
   seller: OrderSeller;
   customerOrders: CustomerOrder[];
+  payments: OrderPayment[];
 };
 
 /**
  * Artículo que se manda al backend al crear o editar pedido.
- *
- * Nueva lógica:
- * - No mandamos productId.
- * - Mandamos SKU, nombre, descripción, cantidad y precio.
- * - También mandamos isPaid para guardar pago individual por artículo.
  */
 export type CreateOrderItemRequest = {
   sku: string;
@@ -136,26 +138,11 @@ export type CreateOrderItemRequest = {
   description?: string | null;
   quantity: number;
   unitPrice: number;
-
-  /**
-   * Indica si el artículo ya fue pagado.
-   *
-   * Para qué sirve:
-   * - Permite marcar un artículo como pagado desde el formulario.
-   *
-   * Beneficio:
-   * - No obliga a marcar todo el pedido como pagado.
-   */
   isPaid?: boolean;
 };
 
 /**
  * Cliente capturado manualmente dentro del pedido.
- *
- * Nueva lógica:
- * - Ya no mandamos customerId.
- * - Mandamos name, phone y notes.
- * - El backend crea o reutiliza cliente por teléfono.
  */
 export type CreateOrderCustomerRequest = {
   name: string;
@@ -166,9 +153,6 @@ export type CreateOrderCustomerRequest = {
 
 /**
  * Body para crear pedido general.
- *
- * Endpoint:
- * POST /api/orders
  */
 export type CreateOrderRequest = {
   deliveryDate?: string | null;
@@ -178,9 +162,6 @@ export type CreateOrderRequest = {
 
 /**
  * Body para actualizar pedido.
- *
- * Endpoint:
- * PUT /api/orders/:id
  */
 export type UpdateOrderRequest = {
   status?: OrderStatus;
@@ -190,17 +171,19 @@ export type UpdateOrderRequest = {
 
 /**
  * Body para editar un pedido completo.
- *
- * Para qué sirve:
- * - Permite editar notas, estado, clientes y artículos.
- *
- * Beneficio:
- * - Podemos agregar clientes/artículos después de crear el pedido.
- * - El backend recalcula los totales.
  */
 export type UpdateFullOrderRequest = {
   status?: OrderStatus;
   deliveryDate?: string | null;
   notes?: string | null;
   customers: CreateOrderCustomerRequest[];
+};
+
+/**
+ * Body para registrar pago o abono.
+ */
+export type CreateOrderPaymentRequest = {
+  amount: number;
+  method?: PaymentMethod;
+  notes?: string | null;
 };
