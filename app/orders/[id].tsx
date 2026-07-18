@@ -16,15 +16,19 @@ import {
 } from "@/src/features/orders/orderCache.service";
 import { validateDraftOrder } from "@/src/features/orders/orderDraft.utils";
 import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
-import { addOrReplaceUpdateOrderQueueItem } from "@/src/features/sync/syncQueue.service";
+import {
+  addOrReplaceUpdateOrderQueueItem,
+  addSyncQueueItem,
+  getPendingSyncQueueItems,
+} from "@/src/features/sync/syncQueue.service";
 import {
   useCreateOrderPaymentMutation,
   useGetOrderByIdQuery,
   useGetOrderPaymentSummaryQuery,
   useUpdateFullOrderMutation,
 } from "@/src/services/ordersApi";
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -45,6 +49,14 @@ type DraftCustomerOrder = {
   phone: string;
   notes: string;
   items: DraftOrderItem[];
+};
+
+type PendingOfflinePayment = {
+  id: number;
+  orderId: number;
+  amount: number;
+  method: PaymentMethod;
+  notes: string | null;
 };
 
 function createLocalId() {
@@ -71,6 +83,18 @@ function showOfflineUpdateToast() {
   }
 
   Alert.alert("Cambios guardados offline", message);
+}
+
+function showOfflinePaymentToast() {
+  const message =
+    "Abono guardado offline. Se sincronizará cuando vuelva internet.";
+
+  if (Platform.OS === "android") {
+    ToastAndroid.show(message, ToastAndroid.LONG);
+    return;
+  }
+
+  Alert.alert("Abono guardado offline", message);
 }
 
 function createEmptyItem(): DraftOrderItem {
@@ -144,9 +168,56 @@ export default function OrderDetailScreen() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [paymentNotes, setPaymentNotes] = useState("");
 
+  const [pendingOfflinePayments, setPendingOfflinePayments] = useState<
+    PendingOfflinePayment[]
+  >([]);
+
   const isShowingOfflineOrder = Boolean(error && cachedOrder);
 
   const order = orderData?.data ?? cachedOrder;
+
+  const loadPendingOfflinePayments = useCallback(async () => {
+    if (!orderId) {
+      return;
+    }
+
+    try {
+      const pendingItems = await getPendingSyncQueueItems();
+
+      const payments = pendingItems
+        .filter((item) => item.type === "CREATE_ORDER_PAYMENT")
+        .map((item) => {
+          const payload = JSON.parse(item.payload) as {
+            orderId: number;
+            body: {
+              amount: number;
+              method?: PaymentMethod;
+              notes?: string | null;
+            };
+          };
+
+          return {
+            id: item.id,
+            orderId: payload.orderId,
+            amount: Number(payload.body.amount),
+            method: payload.body.method ?? "CASH",
+            notes: payload.body.notes ?? null,
+          };
+        })
+        .filter((payment) => payment.orderId === orderId);
+
+      setPendingOfflinePayments(payments);
+    } catch (pendingPaymentsError) {
+      console.log("LOAD_PENDING_OFFLINE_PAYMENTS_ERROR:", pendingPaymentsError);
+      setPendingOfflinePayments([]);
+    }
+  }, [orderId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadPendingOfflinePayments();
+    }, [loadPendingOfflinePayments]),
+  );
 
   useEffect(() => {
     if (!error || !orderId) {
@@ -224,6 +295,12 @@ export default function OrderDetailScreen() {
     return getOrderPaymentSummary(allItems);
   }, [draftCustomers]);
 
+  const pendingOfflinePaymentsTotal = useMemo(() => {
+    return pendingOfflinePayments.reduce((total, payment) => {
+      return total + payment.amount;
+    }, 0);
+  }, [pendingOfflinePayments]);
+
   const savedPaymentSummary = useMemo(() => {
     const totalAmount = Number(order?.total ?? 0);
 
@@ -231,24 +308,37 @@ export default function OrderDetailScreen() {
       return total + Number(payment.amount);
     }, 0);
 
-    const pendingAmount = Math.max(totalAmount - paidAmount, 0);
+    const paidWithOffline = paidAmount + pendingOfflinePaymentsTotal;
+    const pendingAmount = Math.max(totalAmount - paidWithOffline, 0);
 
     return {
       totalAmount,
-      paidAmount,
+      paidAmount: paidWithOffline,
       pendingAmount,
-      isFullyPaid: paidAmount >= totalAmount && totalAmount > 0,
-      hasPayments: paidAmount > 0,
+      isFullyPaid: paidWithOffline >= totalAmount && totalAmount > 0,
+      hasPayments: paidWithOffline > 0,
     };
-  }, [order]);
+  }, [order, pendingOfflinePaymentsTotal]);
 
   const paymentSummary = paymentSummaryData?.data
     ? {
         totalAmount: Number(paymentSummaryData.data.totalAmount),
-        paidAmount: Number(paymentSummaryData.data.paidAmount),
-        pendingAmount: Number(paymentSummaryData.data.pendingAmount),
-        isFullyPaid: paymentSummaryData.data.isFullyPaid,
-        hasPayments: paymentSummaryData.data.hasPayments,
+        paidAmount:
+          Number(paymentSummaryData.data.paidAmount) +
+          pendingOfflinePaymentsTotal,
+        pendingAmount: Math.max(
+          Number(paymentSummaryData.data.pendingAmount) -
+            pendingOfflinePaymentsTotal,
+          0,
+        ),
+        isFullyPaid:
+          Number(paymentSummaryData.data.paidAmount) +
+            pendingOfflinePaymentsTotal >=
+            Number(paymentSummaryData.data.totalAmount) &&
+          Number(paymentSummaryData.data.totalAmount) > 0,
+        hasPayments:
+          paymentSummaryData.data.hasPayments ||
+          pendingOfflinePaymentsTotal > 0,
       }
     : savedPaymentSummary;
 
@@ -476,14 +566,16 @@ export default function OrderDetailScreen() {
       return;
     }
 
+    const paymentPayload = {
+      amount,
+      method: paymentMethod,
+      notes: paymentNotes.trim() || null,
+    };
+
     try {
       await createOrderPayment({
         id: orderId,
-        body: {
-          amount,
-          method: paymentMethod,
-          notes: paymentNotes.trim() || null,
-        },
+        body: paymentPayload,
       }).unwrap();
 
       setPaymentAmount("");
@@ -493,13 +585,23 @@ export default function OrderDetailScreen() {
 
       await refetch();
       await refetchPaymentSummary();
+      await loadPendingOfflinePayments();
 
       Alert.alert("Pago registrado", "El abono se guardó correctamente.");
-    } catch (paymentError: any) {
-      Alert.alert(
-        "Error al registrar pago",
-        paymentError?.data?.message ?? "No se pudo registrar el pago.",
-      );
+    } catch {
+      await addSyncQueueItem("CREATE_ORDER_PAYMENT", {
+        orderId,
+        body: paymentPayload,
+      });
+
+      setPaymentAmount("");
+      setPaymentMethod("CASH");
+      setPaymentNotes("");
+      setShowPaymentForm(false);
+
+      await loadPendingOfflinePayments();
+
+      showOfflinePaymentToast();
     }
   }
 
@@ -649,6 +751,42 @@ export default function OrderDetailScreen() {
                   : "Sin pagos"}
             </Text>
           </View>
+
+          {pendingOfflinePayments.length ? (
+            <View className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+              <Text className="text-base font-extrabold text-amber-800">
+                Abonos pendientes offline
+              </Text>
+
+              <Text className="mt-1 text-sm text-amber-700">
+                Estos abonos están guardados en este dispositivo y se
+                sincronizarán cuando vuelva internet.
+              </Text>
+
+              <View className="mt-3 gap-3">
+                {pendingOfflinePayments.map((payment) => (
+                  <View
+                    key={payment.id}
+                    className="rounded-xl border border-amber-200 bg-white/80 p-3"
+                  >
+                    <Text className="text-base font-extrabold text-slate-950">
+                      ${payment.amount.toFixed(2)}
+                    </Text>
+
+                    <Text className="mt-1 text-sm font-bold text-slate-600">
+                      Método: {payment.method}
+                    </Text>
+
+                    {payment.notes ? (
+                      <Text className="mt-1 text-sm text-slate-500">
+                        {payment.notes}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
 
           {order.payments.length ? (
             <View className="mt-5 rounded-2xl bg-white/80 p-4">

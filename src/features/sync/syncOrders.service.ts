@@ -16,6 +16,11 @@ type UpdateOrderSyncPayload = {
   body: unknown;
 };
 
+type CreateOrderPaymentSyncPayload = {
+  orderId: number;
+  body: unknown;
+};
+
 export type SyncPendingOrdersResult = {
   total: number;
   synced: number;
@@ -64,16 +69,48 @@ async function syncUpdateOrder(payload: UpdateOrderSyncPayload, token: string) {
   }
 }
 
+async function syncCreateOrderPayment(
+  payload: CreateOrderPaymentSyncPayload,
+  token: string,
+) {
+  const response = await fetch(
+    `${API_BASE_URL}/orders/${payload.orderId}/payments`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload.body),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Error ${response.status}: ${
+        errorText || "No se pudo sincronizar el abono del pedido."
+      }`,
+    );
+  }
+}
+
 /**
  * Sincroniza acciones offline:
  * - CREATE_ORDER: pedidos nuevos.
  * - UPDATE_ORDER: ediciones de pedidos existentes.
+ * - CREATE_ORDER_PAYMENT: abonos registrados sin internet.
  */
 export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
   const pendingItems = await getPendingSyncQueueItems();
 
-  const orderItems = pendingItems.filter((item) => {
-    return item.type === "CREATE_ORDER" || item.type === "UPDATE_ORDER";
+  const syncItems = pendingItems.filter((item) => {
+    return (
+      item.type === "CREATE_ORDER" ||
+      item.type === "UPDATE_ORDER" ||
+      item.type === "CREATE_ORDER_PAYMENT"
+    );
   });
 
   const token = await getToken();
@@ -85,7 +122,7 @@ export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
   let synced = 0;
   let failed = 0;
 
-  for (const item of orderItems) {
+  for (const item of syncItems) {
     try {
       const payload = JSON.parse(item.payload);
 
@@ -95,6 +132,13 @@ export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
 
       if (item.type === "UPDATE_ORDER") {
         await syncUpdateOrder(payload as UpdateOrderSyncPayload, token);
+      }
+
+      if (item.type === "CREATE_ORDER_PAYMENT") {
+        await syncCreateOrderPayment(
+          payload as CreateOrderPaymentSyncPayload,
+          token,
+        );
       }
 
       await updateSyncQueueItemStatus(item.id, "SYNCED", null);
@@ -113,7 +157,7 @@ export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
   await deleteSyncedSyncQueueItems();
 
   return {
-    total: orderItems.length,
+    total: syncItems.length,
     synced,
     failed,
   };

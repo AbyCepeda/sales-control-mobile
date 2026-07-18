@@ -6,8 +6,14 @@
  *
  * UPDATE_ORDER:
  * - Pedido existente editado sin internet.
+ *
+ * CREATE_ORDER_PAYMENT:
+ * - Abono/pago registrado sin internet.
  */
-export type SyncQueueType = "CREATE_ORDER" | "UPDATE_ORDER";
+export type SyncQueueType =
+  | "CREATE_ORDER"
+  | "UPDATE_ORDER"
+  | "CREATE_ORDER_PAYMENT";
 
 /**
  * Estados de una acción offline.
