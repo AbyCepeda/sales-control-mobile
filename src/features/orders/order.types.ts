@@ -71,6 +71,29 @@ export type OrderItem = {
 };
 
 /**
+ * Pago o abono registrado para un cliente dentro de un pedido.
+ *
+ * Antes:
+ * - El pago pertenecía al pedido general.
+ *
+ * Ahora:
+ * - El pago pertenece a CustomerOrder.
+ *
+ * Beneficio:
+ * - Sabemos exactamente qué cliente pagó.
+ * - Podemos calcular pagado y pendiente por cliente.
+ */
+export type CustomerOrderPayment = {
+  id: number;
+  customerOrderId: number;
+  amount: string;
+  method: PaymentMethod;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
  * Cliente dentro de un pedido general.
  */
 export type CustomerOrder = {
@@ -84,25 +107,17 @@ export type CustomerOrder = {
 
   customer: OrderCustomer;
   items: OrderItem[];
+
+  /**
+   * Abonos de este cliente dentro del pedido.
+   */
+  payments: CustomerOrderPayment[];
 };
 
 /**
- * Pago o abono registrado para un pedido.
+ * Resumen de pagos de un cliente dentro de un pedido.
  */
-export type OrderPayment = {
-  id: number;
-  orderId: number;
-  amount: string;
-  method: PaymentMethod;
-  notes: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-/**
- * Resumen de pagos de un pedido.
- */
-export type OrderPaymentSummary = {
+export type CustomerOrderPaymentSummary = {
   totalAmount: string;
   paidAmount: string;
   pendingAmount: string;
@@ -112,6 +127,10 @@ export type OrderPaymentSummary = {
 
 /**
  * Pedido general recibido desde backend.
+ *
+ * Importante:
+ * - Ya NO tiene payments directo.
+ * - Los pagos están dentro de cada customerOrder.
  */
 export type Order = {
   id: number;
@@ -126,7 +145,6 @@ export type Order = {
 
   seller: OrderSeller;
   customerOrders: CustomerOrder[];
-  payments: OrderPayment[];
 };
 
 /**
@@ -180,9 +198,9 @@ export type UpdateFullOrderRequest = {
 };
 
 /**
- * Body para registrar pago o abono.
+ * Body para registrar pago o abono de un cliente dentro del pedido.
  */
-export type CreateOrderPaymentRequest = {
+export type CreateCustomerOrderPaymentRequest = {
   amount: number;
   method?: PaymentMethod;
   notes?: string | null;

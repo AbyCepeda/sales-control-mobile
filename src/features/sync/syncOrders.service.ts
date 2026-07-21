@@ -16,8 +16,8 @@ type UpdateOrderSyncPayload = {
   body: unknown;
 };
 
-type CreateOrderPaymentSyncPayload = {
-  orderId: number;
+type CreateCustomerOrderPaymentSyncPayload = {
+  customerOrderId: number;
   body: unknown;
 };
 
@@ -69,12 +69,12 @@ async function syncUpdateOrder(payload: UpdateOrderSyncPayload, token: string) {
   }
 }
 
-async function syncCreateOrderPayment(
-  payload: CreateOrderPaymentSyncPayload,
+async function syncCreateCustomerOrderPayment(
+  payload: CreateCustomerOrderPaymentSyncPayload,
   token: string,
 ) {
   const response = await fetch(
-    `${API_BASE_URL}/orders/${payload.orderId}/payments`,
+    `${API_BASE_URL}/customer-orders/${payload.customerOrderId}/payments`,
     {
       method: "POST",
       headers: {
@@ -90,7 +90,7 @@ async function syncCreateOrderPayment(
 
     throw new Error(
       `Error ${response.status}: ${
-        errorText || "No se pudo sincronizar el abono del pedido."
+        errorText || "No se pudo sincronizar el abono del cliente."
       }`,
     );
   }
@@ -101,6 +101,12 @@ async function syncCreateOrderPayment(
  * - CREATE_ORDER: pedidos nuevos.
  * - UPDATE_ORDER: ediciones de pedidos existentes.
  * - CREATE_ORDER_PAYMENT: abonos registrados sin internet.
+ *
+ * Nueva lógica:
+ * - CREATE_ORDER_PAYMENT ahora usa customerOrderId.
+ *
+ * Beneficio:
+ * - El abono offline se sincroniza con el cliente correcto dentro del pedido.
  */
 export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
   const pendingItems = await getPendingSyncQueueItems();
@@ -135,8 +141,8 @@ export async function syncPendingOrders(): Promise<SyncPendingOrdersResult> {
       }
 
       if (item.type === "CREATE_ORDER_PAYMENT") {
-        await syncCreateOrderPayment(
-          payload as CreateOrderPaymentSyncPayload,
+        await syncCreateCustomerOrderPayment(
+          payload as CreateCustomerOrderPaymentSyncPayload,
           token,
         );
       }

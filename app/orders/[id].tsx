@@ -6,6 +6,7 @@ import { AppInput } from "@/src/components/ui/AppInput";
 import type {
   CreateOrderCustomerRequest,
   CreateOrderItemRequest,
+  CustomerOrderPayment,
   Order,
   OrderStatus,
   PaymentMethod,
@@ -22,9 +23,8 @@ import {
   getPendingSyncQueueItems,
 } from "@/src/features/sync/syncQueue.service";
 import {
-  useCreateOrderPaymentMutation,
+  useCreateCustomerOrderPaymentMutation,
   useGetOrderByIdQuery,
-  useGetOrderPaymentSummaryQuery,
   useUpdateFullOrderMutation,
 } from "@/src/services/ordersApi";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -45,15 +45,33 @@ type DraftOrderItem = CreateOrderItemRequest & {
 
 type DraftCustomerOrder = {
   localId: string;
+
+  /**
+   * ID real de CustomerOrder en backend.
+   *
+   * Para qué sirve:
+   * - Permite registrar abonos para ese cliente específico.
+   *
+   * Beneficio:
+   * - El pago ya no se guarda en el pedido general.
+   * - Se guarda en el cliente correcto dentro del pedido.
+   */
+  customerOrderId?: number;
+
   name: string;
   phone: string;
   notes: string;
   items: DraftOrderItem[];
+
+  /**
+   * Abonos guardados en backend para este cliente dentro del pedido.
+   */
+  payments: CustomerOrderPayment[];
 };
 
 type PendingOfflinePayment = {
   id: number;
-  orderId: number;
+  customerOrderId: number;
   amount: number;
   method: PaymentMethod;
   notes: string | null;
@@ -116,7 +134,44 @@ function createEmptyCustomerOrder(): DraftCustomerOrder {
     phone: "",
     notes: "",
     items: [createEmptyItem()],
+    payments: [],
   };
+}
+
+function getPaymentMethodLabel(method: PaymentMethod) {
+  const labels: Record<PaymentMethod, string> = {
+    CASH: "Efectivo",
+    TRANSFER: "Transferencia",
+    CARD: "Tarjeta",
+    OTHER: "Otro",
+  };
+
+  return labels[method];
+}
+
+function getCustomerTotal(customerOrder: DraftCustomerOrder) {
+  return customerOrder.items.reduce((total, item) => {
+    return total + item.quantity * item.unitPrice;
+  }, 0);
+}
+
+function getCustomerPaidTotal(
+  customerOrder: DraftCustomerOrder,
+  pendingOfflinePayments: PendingOfflinePayment[],
+) {
+  const savedPaymentsTotal = customerOrder.payments.reduce((total, payment) => {
+    return total + Number(payment.amount);
+  }, 0);
+
+  const offlinePaymentsTotal = pendingOfflinePayments
+    .filter(
+      (payment) => payment.customerOrderId === customerOrder.customerOrderId,
+    )
+    .reduce((total, payment) => {
+      return total + payment.amount;
+    }, 0);
+
+  return savedPaymentsTotal + offlinePaymentsTotal;
 }
 
 export default function OrderDetailScreen() {
@@ -135,16 +190,11 @@ export default function OrderDetailScreen() {
     skip: !orderId,
   });
 
-  const { data: paymentSummaryData, refetch: refetchPaymentSummary } =
-    useGetOrderPaymentSummaryQuery(orderId, {
-      skip: !orderId,
-    });
-
   const [updateFullOrder, { isLoading: isSaving }] =
     useUpdateFullOrderMutation();
 
-  const [createOrderPayment, { isLoading: isCreatingPayment }] =
-    useCreateOrderPaymentMutation();
+  const [createCustomerOrderPayment, { isLoading: isCreatingPayment }] =
+    useCreateCustomerOrderPaymentMutation();
 
   const [status, setStatus] = useState<OrderStatus>("PENDING");
   const [orderNotes, setOrderNotes] = useState("");
@@ -163,7 +213,10 @@ export default function OrderDetailScreen() {
 
   const [cachedOrder, setCachedOrder] = useState<Order | null>(null);
 
-  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentCustomerLocalId, setPaymentCustomerLocalId] = useState<
+    string | null
+  >(null);
+
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [paymentNotes, setPaymentNotes] = useState("");
@@ -176,11 +229,15 @@ export default function OrderDetailScreen() {
 
   const order = orderData?.data ?? cachedOrder;
 
-  const loadPendingOfflinePayments = useCallback(async () => {
-    if (!orderId) {
-      return;
-    }
+  const customerOrderIds = useMemo(() => {
+    return draftCustomers
+      .map((customerOrder) => customerOrder.customerOrderId)
+      .filter((customerOrderId): customerOrderId is number => {
+        return typeof customerOrderId === "number";
+      });
+  }, [draftCustomers]);
 
+  const loadPendingOfflinePayments = useCallback(async () => {
     try {
       const pendingItems = await getPendingSyncQueueItems();
 
@@ -188,7 +245,7 @@ export default function OrderDetailScreen() {
         .filter((item) => item.type === "CREATE_ORDER_PAYMENT")
         .map((item) => {
           const payload = JSON.parse(item.payload) as {
-            orderId: number;
+            customerOrderId: number;
             body: {
               amount: number;
               method?: PaymentMethod;
@@ -198,20 +255,22 @@ export default function OrderDetailScreen() {
 
           return {
             id: item.id,
-            orderId: payload.orderId,
+            customerOrderId: payload.customerOrderId,
             amount: Number(payload.body.amount),
             method: payload.body.method ?? "CASH",
             notes: payload.body.notes ?? null,
           };
         })
-        .filter((payment) => payment.orderId === orderId);
+        .filter((payment) =>
+          customerOrderIds.includes(payment.customerOrderId),
+        );
 
       setPendingOfflinePayments(payments);
     } catch (pendingPaymentsError) {
       console.log("LOAD_PENDING_OFFLINE_PAYMENTS_ERROR:", pendingPaymentsError);
       setPendingOfflinePayments([]);
     }
-  }, [orderId]);
+  }, [customerOrderIds]);
 
   useFocusEffect(
     useCallback(() => {
@@ -253,9 +312,11 @@ export default function OrderDetailScreen() {
     const mappedCustomers: DraftCustomerOrder[] = order.customerOrders.map(
       (customerOrder) => ({
         localId: createLocalId(),
+        customerOrderId: customerOrder.id,
         name: customerOrder.customer.name,
         phone: customerOrder.customer.phone ?? "",
         notes: customerOrder.notes ?? customerOrder.customer.notes ?? "",
+        payments: customerOrder.payments ?? [],
         items: customerOrder.items.map((item) => ({
           localId: createLocalId(),
           sku: item.skuSnapshot,
@@ -273,13 +334,13 @@ export default function OrderDetailScreen() {
     );
   }, [order]);
 
+  useEffect(() => {
+    loadPendingOfflinePayments();
+  }, [loadPendingOfflinePayments]);
+
   const draftTotal = useMemo(() => {
     return draftCustomers.reduce((orderTotal, customerOrder) => {
-      const customerTotal = customerOrder.items.reduce((itemsTotal, item) => {
-        return itemsTotal + item.quantity * item.unitPrice;
-      }, 0);
-
-      return orderTotal + customerTotal;
+      return orderTotal + getCustomerTotal(customerOrder);
     }, 0);
   }, [draftCustomers]);
 
@@ -294,53 +355,6 @@ export default function OrderDetailScreen() {
 
     return getOrderPaymentSummary(allItems);
   }, [draftCustomers]);
-
-  const pendingOfflinePaymentsTotal = useMemo(() => {
-    return pendingOfflinePayments.reduce((total, payment) => {
-      return total + payment.amount;
-    }, 0);
-  }, [pendingOfflinePayments]);
-
-  const savedPaymentSummary = useMemo(() => {
-    const totalAmount = Number(order?.total ?? 0);
-
-    const paidAmount = (order?.payments ?? []).reduce((total, payment) => {
-      return total + Number(payment.amount);
-    }, 0);
-
-    const paidWithOffline = paidAmount + pendingOfflinePaymentsTotal;
-    const pendingAmount = Math.max(totalAmount - paidWithOffline, 0);
-
-    return {
-      totalAmount,
-      paidAmount: paidWithOffline,
-      pendingAmount,
-      isFullyPaid: paidWithOffline >= totalAmount && totalAmount > 0,
-      hasPayments: paidWithOffline > 0,
-    };
-  }, [order, pendingOfflinePaymentsTotal]);
-
-  const paymentSummary = paymentSummaryData?.data
-    ? {
-        totalAmount: Number(paymentSummaryData.data.totalAmount),
-        paidAmount:
-          Number(paymentSummaryData.data.paidAmount) +
-          pendingOfflinePaymentsTotal,
-        pendingAmount: Math.max(
-          Number(paymentSummaryData.data.pendingAmount) -
-            pendingOfflinePaymentsTotal,
-          0,
-        ),
-        isFullyPaid:
-          Number(paymentSummaryData.data.paidAmount) +
-            pendingOfflinePaymentsTotal >=
-            Number(paymentSummaryData.data.totalAmount) &&
-          Number(paymentSummaryData.data.totalAmount) > 0,
-        hasPayments:
-          paymentSummaryData.data.hasPayments ||
-          pendingOfflinePaymentsTotal > 0,
-      }
-    : savedPaymentSummary;
 
   function handleAddCustomer() {
     const newCustomer = createEmptyCustomerOrder();
@@ -501,6 +515,16 @@ export default function OrderDetailScreen() {
     );
   }
 
+  function handleOpenPaymentForm(customerLocalId: string) {
+    setPaymentCustomerLocalId((current) =>
+      current === customerLocalId ? null : customerLocalId,
+    );
+
+    setPaymentAmount("");
+    setPaymentMethod("CASH");
+    setPaymentNotes("");
+  }
+
   async function handleSaveChanges() {
     const validation = validateDraftOrder(draftCustomers);
 
@@ -558,7 +582,16 @@ export default function OrderDetailScreen() {
     }
   }
 
-  async function handleCreatePayment() {
+  async function handleCreatePayment(customerOrder: DraftCustomerOrder) {
+    if (!customerOrder.customerOrderId) {
+      Alert.alert(
+        "Guarda el pedido primero",
+        "Este cliente todavía no existe en el backend. Guarda los cambios del pedido antes de registrar un abono.",
+      );
+
+      return;
+    }
+
     const amount = parseNumber(paymentAmount);
 
     if (amount <= 0) {
@@ -573,31 +606,30 @@ export default function OrderDetailScreen() {
     };
 
     try {
-      await createOrderPayment({
-        id: orderId,
+      await createCustomerOrderPayment({
+        customerOrderId: customerOrder.customerOrderId,
         body: paymentPayload,
       }).unwrap();
 
       setPaymentAmount("");
       setPaymentMethod("CASH");
       setPaymentNotes("");
-      setShowPaymentForm(false);
+      setPaymentCustomerLocalId(null);
 
       await refetch();
-      await refetchPaymentSummary();
       await loadPendingOfflinePayments();
 
       Alert.alert("Pago registrado", "El abono se guardó correctamente.");
     } catch {
       await addSyncQueueItem("CREATE_ORDER_PAYMENT", {
-        orderId,
+        customerOrderId: customerOrder.customerOrderId,
         body: paymentPayload,
       });
 
       setPaymentAmount("");
       setPaymentMethod("CASH");
       setPaymentNotes("");
-      setShowPaymentForm(false);
+      setPaymentCustomerLocalId(null);
 
       await loadPendingOfflinePayments();
 
@@ -712,182 +744,28 @@ export default function OrderDetailScreen() {
           />
         </AppCard>
 
-        <AppCard className="mt-6 border border-emerald-200 bg-emerald-50">
-          <Text className="text-lg font-extrabold text-emerald-900">
-            Pagos del pedido
-          </Text>
-
-          <View className="mt-4 rounded-2xl bg-white/80 p-4">
-            <Text className="text-sm font-bold text-slate-600">
-              Total del pedido
-            </Text>
-
-            <Text className="mt-1 text-2xl font-extrabold text-slate-950">
-              ${paymentSummary.totalAmount.toFixed(2)}
-            </Text>
-
-            <Text className="mt-4 text-sm font-bold text-slate-600">
-              Pagado en abonos
-            </Text>
-
-            <Text className="mt-1 text-2xl font-extrabold text-emerald-700">
-              ${paymentSummary.paidAmount.toFixed(2)}
-            </Text>
-
-            <Text className="mt-4 text-sm font-bold text-slate-600">
-              Pendiente
-            </Text>
-
-            <Text className="mt-1 text-2xl font-extrabold text-orange-600">
-              ${paymentSummary.pendingAmount.toFixed(2)}
-            </Text>
-
-            <Text className="mt-4 text-sm font-bold text-slate-500">
-              Estado de pago:{" "}
-              {paymentSummary.isFullyPaid
-                ? "Pagado"
-                : paymentSummary.hasPayments
-                  ? "Abonado"
-                  : "Sin pagos"}
-            </Text>
-          </View>
-
-          {pendingOfflinePayments.length ? (
-            <View className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-              <Text className="text-base font-extrabold text-amber-800">
-                Abonos pendientes offline
-              </Text>
-
-              <Text className="mt-1 text-sm text-amber-700">
-                Estos abonos están guardados en este dispositivo y se
-                sincronizarán cuando vuelva internet.
-              </Text>
-
-              <View className="mt-3 gap-3">
-                {pendingOfflinePayments.map((payment) => (
-                  <View
-                    key={payment.id}
-                    className="rounded-xl border border-amber-200 bg-white/80 p-3"
-                  >
-                    <Text className="text-base font-extrabold text-slate-950">
-                      ${payment.amount.toFixed(2)}
-                    </Text>
-
-                    <Text className="mt-1 text-sm font-bold text-slate-600">
-                      Método: {payment.method}
-                    </Text>
-
-                    {payment.notes ? (
-                      <Text className="mt-1 text-sm text-slate-500">
-                        {payment.notes}
-                      </Text>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          {order.payments.length ? (
-            <View className="mt-5 rounded-2xl bg-white/80 p-4">
-              <Text className="text-base font-extrabold text-slate-950">
-                Historial de abonos
-              </Text>
-
-              <View className="mt-3 gap-3">
-                {order.payments.map((payment) => (
-                  <View
-                    key={payment.id}
-                    className="rounded-xl border border-slate-200 bg-slate-50 p-3"
-                  >
-                    <Text className="text-base font-extrabold text-slate-950">
-                      ${Number(payment.amount).toFixed(2)}
-                    </Text>
-
-                    <Text className="mt-1 text-sm font-bold text-slate-600">
-                      Método: {payment.method}
-                    </Text>
-
-                    {payment.notes ? (
-                      <Text className="mt-1 text-sm text-slate-500">
-                        {payment.notes}
-                      </Text>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          <AppButton
-            title={showPaymentForm ? "Cancelar abono" : "Registrar abono"}
-            variant={showPaymentForm ? "outline" : "success"}
-            className="mt-5 py-4"
-            onPress={() => setShowPaymentForm((current) => !current)}
-          />
-
-          {showPaymentForm ? (
-            <View className="mt-5 rounded-2xl bg-white/80 p-4">
-              <AppInput
-                label="Monto del abono"
-                placeholder="Ej. 300"
-                value={paymentAmount}
-                onChangeText={setPaymentAmount}
-                keyboardType="numeric"
-              />
-
-              <Text className="mt-5 font-extrabold text-slate-950">
-                Método de pago
-              </Text>
-
-              <View className="mt-3 flex-row flex-wrap gap-2">
-                {[
-                  { label: "Efectivo", value: "CASH" as const },
-                  { label: "Transferencia", value: "TRANSFER" as const },
-                  { label: "Tarjeta", value: "CARD" as const },
-                  { label: "Otro", value: "OTHER" as const },
-                ].map((method) => {
-                  const isSelected = paymentMethod === method.value;
-
-                  return (
-                    <AppButton
-                      key={method.value}
-                      title={method.label}
-                      variant={isSelected ? "primary" : "outline"}
-                      className="px-3 py-2"
-                      textClassName="text-xs"
-                      onPress={() => setPaymentMethod(method.value)}
-                    />
-                  );
-                })}
-              </View>
-
-              <AppInput
-                className="mt-5"
-                label="Notas"
-                placeholder="Ej. Abono inicial"
-                value={paymentNotes}
-                onChangeText={setPaymentNotes}
-                multiline
-              />
-
-              <AppButton
-                title="Guardar abono"
-                variant="success"
-                className="mt-5 py-4"
-                onPress={handleCreatePayment}
-                isLoading={isCreatingPayment}
-              />
-            </View>
-          ) : null}
-        </AppCard>
-
         <View className="mt-6 gap-5">
           {draftCustomers.map((customerOrder, customerIndex) => {
-            const customerTotal = customerOrder.items.reduce(
-              (total, item) => total + item.quantity * item.unitPrice,
+            const customerTotal = getCustomerTotal(customerOrder);
+            const customerPaidTotal = getCustomerPaidTotal(
+              customerOrder,
+              pendingOfflinePayments,
+            );
+            const customerPendingTotal = Math.max(
+              customerTotal - customerPaidTotal,
               0,
             );
+            const isCustomerFullyPaid =
+              customerPaidTotal >= customerTotal && customerTotal > 0;
+
+            const customerPendingOfflinePayments =
+              pendingOfflinePayments.filter(
+                (payment) =>
+                  payment.customerOrderId === customerOrder.customerOrderId,
+              );
+
+            const isPaymentFormOpen =
+              paymentCustomerLocalId === customerOrder.localId;
 
             return (
               <AppCard key={customerOrder.localId}>
@@ -907,6 +785,180 @@ export default function OrderDetailScreen() {
                   onToggleItemPaid={handleToggleItemPaid}
                   onUpdateItem={handleUpdateItem}
                 />
+
+                <View className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <Text className="text-base font-extrabold text-emerald-900">
+                    Abonos de {customerOrder.name || "cliente"}
+                  </Text>
+
+                  <View className="mt-4 rounded-2xl bg-white/80 p-4">
+                    <Text className="text-sm font-bold text-slate-600">
+                      Total del cliente
+                    </Text>
+
+                    <Text className="mt-1 text-2xl font-extrabold text-slate-950">
+                      ${customerTotal.toFixed(2)}
+                    </Text>
+
+                    <Text className="mt-4 text-sm font-bold text-slate-600">
+                      Pagado
+                    </Text>
+
+                    <Text className="mt-1 text-2xl font-extrabold text-emerald-700">
+                      ${customerPaidTotal.toFixed(2)}
+                    </Text>
+
+                    <Text className="mt-4 text-sm font-bold text-slate-600">
+                      Pendiente
+                    </Text>
+
+                    <Text className="mt-1 text-2xl font-extrabold text-orange-600">
+                      ${customerPendingTotal.toFixed(2)}
+                    </Text>
+
+                    <Text className="mt-4 text-sm font-bold text-slate-500">
+                      Estado de pago:{" "}
+                      {isCustomerFullyPaid
+                        ? "Pagado"
+                        : customerPaidTotal > 0
+                          ? "Abonado"
+                          : "Sin pagos"}
+                    </Text>
+                  </View>
+
+                  {customerPendingOfflinePayments.length ? (
+                    <View className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                      <Text className="text-base font-extrabold text-amber-800">
+                        Abonos pendientes offline
+                      </Text>
+
+                      <Text className="mt-1 text-sm text-amber-700">
+                        Estos abonos se sincronizarán cuando vuelva internet.
+                      </Text>
+
+                      <View className="mt-3 gap-3">
+                        {customerPendingOfflinePayments.map((payment) => (
+                          <View
+                            key={payment.id}
+                            className="rounded-xl border border-amber-200 bg-white/80 p-3"
+                          >
+                            <Text className="text-base font-extrabold text-slate-950">
+                              ${payment.amount.toFixed(2)}
+                            </Text>
+
+                            <Text className="mt-1 text-sm font-bold text-slate-600">
+                              Método: {getPaymentMethodLabel(payment.method)}
+                            </Text>
+
+                            {payment.notes ? (
+                              <Text className="mt-1 text-sm text-slate-500">
+                                {payment.notes}
+                              </Text>
+                            ) : null}
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {customerOrder.payments.length ? (
+                    <View className="mt-5 rounded-2xl bg-white/80 p-4">
+                      <Text className="text-base font-extrabold text-slate-950">
+                        Historial de abonos
+                      </Text>
+
+                      <View className="mt-3 gap-3">
+                        {customerOrder.payments.map((payment) => (
+                          <View
+                            key={payment.id}
+                            className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                          >
+                            <Text className="text-base font-extrabold text-slate-950">
+                              ${Number(payment.amount).toFixed(2)}
+                            </Text>
+
+                            <Text className="mt-1 text-sm font-bold text-slate-600">
+                              Método: {getPaymentMethodLabel(payment.method)}
+                            </Text>
+
+                            {payment.notes ? (
+                              <Text className="mt-1 text-sm text-slate-500">
+                                {payment.notes}
+                              </Text>
+                            ) : null}
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  <AppButton
+                    title={
+                      isPaymentFormOpen ? "Cancelar abono" : "Registrar abono"
+                    }
+                    variant={isPaymentFormOpen ? "outline" : "success"}
+                    className="mt-5 py-4"
+                    onPress={() => handleOpenPaymentForm(customerOrder.localId)}
+                  />
+
+                  {isPaymentFormOpen ? (
+                    <View className="mt-5 rounded-2xl bg-white/80 p-4">
+                      <AppInput
+                        label="Monto del abono"
+                        placeholder="Ej. 300"
+                        value={paymentAmount}
+                        onChangeText={setPaymentAmount}
+                        keyboardType="numeric"
+                      />
+
+                      <Text className="mt-5 font-extrabold text-slate-950">
+                        Método de pago
+                      </Text>
+
+                      <View className="mt-3 flex-row flex-wrap gap-2">
+                        {[
+                          { label: "Efectivo", value: "CASH" as const },
+                          {
+                            label: "Transferencia",
+                            value: "TRANSFER" as const,
+                          },
+                          { label: "Tarjeta", value: "CARD" as const },
+                          { label: "Otro", value: "OTHER" as const },
+                        ].map((method) => {
+                          const isSelected = paymentMethod === method.value;
+
+                          return (
+                            <AppButton
+                              key={method.value}
+                              title={method.label}
+                              variant={isSelected ? "primary" : "outline"}
+                              className="px-3 py-2"
+                              textClassName="text-xs"
+                              onPress={() => setPaymentMethod(method.value)}
+                            />
+                          );
+                        })}
+                      </View>
+
+                      <AppInput
+                        className="mt-5"
+                        label="Notas"
+                        placeholder="Ej. Abono inicial"
+                        value={paymentNotes}
+                        onChangeText={setPaymentNotes}
+                        multiline
+                      />
+
+                      <AppButton
+                        title="Guardar abono"
+                        variant="success"
+                        className="mt-5 py-4"
+                        onPress={() => handleCreatePayment(customerOrder)}
+                        isLoading={isCreatingPayment}
+                      />
+                    </View>
+                  ) : null}
+                </View>
               </AppCard>
             );
           })}

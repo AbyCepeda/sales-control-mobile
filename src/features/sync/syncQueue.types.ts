@@ -8,7 +8,7 @@
  * - Pedido existente editado sin internet.
  *
  * CREATE_ORDER_PAYMENT:
- * - Abono/pago registrado sin internet.
+ * - Abono/pago registrado sin internet para un cliente dentro del pedido.
  */
 export type SyncQueueType =
   | "CREATE_ORDER"

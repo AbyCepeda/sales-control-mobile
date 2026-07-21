@@ -1,9 +1,9 @@
 import type { ApiResponse } from "@/src/features/auth/auth.types";
 import type {
-  CreateOrderPaymentRequest,
+  CreateCustomerOrderPaymentRequest,
   CreateOrderRequest,
+  CustomerOrderPaymentSummary,
   Order,
-  OrderPaymentSummary,
   UpdateFullOrderRequest,
   UpdateOrderRequest,
 } from "@/src/features/orders/order.types";
@@ -18,8 +18,14 @@ import { api } from "./api";
  * - GET /api/orders/:id
  * - PUT /api/orders/:id
  * - PUT /api/orders/:id/full
- * - POST /api/orders/:id/payments
- * - GET /api/orders/:id/payments/summary
+ *
+ * Nueva lógica de pagos:
+ * - POST /api/customer-orders/:customerOrderId/payments
+ * - GET /api/customer-orders/:customerOrderId/payments/summary
+ *
+ * Beneficio:
+ * - Los abonos se registran por cliente dentro del pedido.
+ * - Ya no se mezclan pagos de diferentes clientes.
  */
 export const ordersApi = api.injectEndpoints({
   endpoints: (builder) => ({
@@ -83,42 +89,47 @@ export const ordersApi = api.injectEndpoints({
     }),
 
     /**
-     * Registra un pago o abono.
+     * Registra un pago o abono para un cliente dentro del pedido.
      *
      * Para qué sirve:
-     * - Permite guardar pagos parciales o completos.
+     * - Guarda pagos parciales o completos de un CustomerOrder.
      *
      * Beneficio:
-     * - El pedido puede mostrar total, pagado y pendiente.
+     * - Sabemos qué cliente pagó.
+     * - El backend devuelve el pedido actualizado.
      */
-    createOrderPayment: builder.mutation<
+    createCustomerOrderPayment: builder.mutation<
       ApiResponse<Order>,
-      { id: number; body: CreateOrderPaymentRequest }
+      { customerOrderId: number; body: CreateCustomerOrderPaymentRequest }
     >({
-      query: ({ id, body }) => ({
-        url: `/orders/${id}/payments`,
+      query: ({ customerOrderId, body }) => ({
+        url: `/customer-orders/${customerOrderId}/payments`,
         method: "POST",
         body,
       }),
-      invalidatesTags: (_result, _error, { id }) => [
-        "Orders",
-        { type: "Orders", id },
-        "Dashboard",
-      ],
+      invalidatesTags: (result) => {
+        const orderId = result?.data?.id;
+
+        return orderId
+          ? ["Orders", { type: "Orders", id: orderId }, "Dashboard"]
+          : ["Orders", "Dashboard"];
+      },
     }),
 
     /**
-     * Obtiene resumen de pagos del pedido.
+     * Obtiene resumen de pagos de un cliente dentro del pedido.
      */
-    getOrderPaymentSummary: builder.query<
-      ApiResponse<OrderPaymentSummary>,
+    getCustomerOrderPaymentSummary: builder.query<
+      ApiResponse<CustomerOrderPaymentSummary>,
       number
     >({
-      query: (id) => ({
-        url: `/orders/${id}/payments/summary`,
+      query: (customerOrderId) => ({
+        url: `/customer-orders/${customerOrderId}/payments/summary`,
         method: "GET",
       }),
-      providesTags: (_result, _error, id) => [{ type: "Orders", id }],
+      providesTags: (_result, _error, customerOrderId) => [
+        { type: "Orders", id: `customer-order-${customerOrderId}` },
+      ],
     }),
   }),
 });
@@ -129,6 +140,6 @@ export const {
   useCreateOrderMutation,
   useUpdateOrderMutation,
   useUpdateFullOrderMutation,
-  useCreateOrderPaymentMutation,
-  useGetOrderPaymentSummaryQuery,
+  useCreateCustomerOrderPaymentMutation,
+  useGetCustomerOrderPaymentSummaryQuery,
 } = ordersApi;
