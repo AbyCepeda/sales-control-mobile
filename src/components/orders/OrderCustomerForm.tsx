@@ -2,18 +2,11 @@ import { OrderItemForm } from "@/src/components/orders/OrderItemForm";
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppInput } from "@/src/components/ui/AppInput";
 import type { CreateOrderItemRequest } from "@/src/features/orders/order.types";
-import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
 import { useEffect, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 /**
  * Artículo temporal usado dentro del formulario de cliente.
- *
- * Para qué sirve:
- * - Representa un artículo antes de guardarse en backend.
- *
- * Beneficio:
- * - El formulario puede reutilizarse tanto al crear como al editar pedidos.
  */
 type DraftOrderItem = CreateOrderItemRequest & {
   localId: string;
@@ -21,15 +14,10 @@ type DraftOrderItem = CreateOrderItemRequest & {
 
 /**
  * Cliente temporal usado dentro del formulario de pedido.
- *
- * Para qué sirve:
- * - Representa un cliente capturado dentro de un pedido.
- *
- * Beneficio:
- * - Podemos capturar clientes sin depender de una lista previa.
  */
 type DraftCustomerOrder = {
   localId: string;
+  customerOrderId?: number;
   name: string;
   phone: string;
   notes: string;
@@ -38,52 +26,33 @@ type DraftCustomerOrder = {
 
 /**
  * Props del formulario reutilizable de cliente.
- *
- * Para qué sirve:
- * - Define qué información y acciones necesita este componente.
- *
- * Beneficio:
- * - La pantalla padre mantiene la lógica.
- * - Este componente solo se encarga de pintar la UI del cliente.
  */
 type OrderCustomerFormProps = {
   customerOrder: DraftCustomerOrder;
   customerIndex: number;
   customersCount: number;
   customerTotal: number;
+
+  /**
+   * Total pagado por abonos.
+   *
+   * Para qué sirve:
+   * - Ya no calculamos pagado por artículos marcados.
+   * - Ahora usamos los abonos reales del cliente.
+   *
+   * Beneficio:
+   * - El resumen del cliente coincide con la sección "Abonos de cliente".
+   */
+  customerPaidTotal: number;
+
+  /**
+   * Total pendiente después de abonos.
+   */
+  customerPendingTotal: number;
+
   itemInputClassName?: string;
-
-  /**
-   * Controla si el cliente inicia abierto o cerrado.
-   *
-   * Para qué sirve:
-   * - En formularios grandes podemos iniciar cerrado.
-   *
-   * Beneficio:
-   * - Si el pedido tiene muchos clientes/artículos, no saturamos la pantalla.
-   */
   defaultExpanded?: boolean;
-
-  /**
-   * ID local del cliente que debe iniciar abierto.
-   *
-   * Para qué sirve:
-   * - Cuando agregamos un cliente nuevo, podemos abrirlo automáticamente.
-   *
-   * Beneficio:
-   * - El usuario no tiene que buscarlo ni presionar "Editar cliente".
-   */
   expandedCustomerLocalId?: string | null;
-
-  /**
-   * ID local del artículo que debe iniciar abierto.
-   *
-   * Para qué sirve:
-   * - Cuando agregamos un artículo nuevo, podemos abrirlo automáticamente.
-   *
-   * Beneficio:
-   * - El usuario no tiene que presionar "Editar artículo" después de agregarlo.
-   */
   expandedItemLocalId?: string | null;
 
   onRemoveCustomer: (customerLocalId: string) => void;
@@ -111,21 +80,20 @@ type OrderCustomerFormProps = {
 /**
  * Formulario reutilizable de cliente dentro de un pedido.
  *
- * Para qué sirve:
- * - Muestra datos del cliente.
- * - Muestra resumen de pago.
- * - Permite abrir/cerrar sus campos y artículos.
- * - Permite agregar/quitar artículos.
+ * Importante:
+ * - El resumen "Pagado" y "Pendiente" ahora viene desde el padre.
+ * - El padre calcula usando customerOrder.payments.
  *
  * Beneficio:
- * - Crear y editar pedido quedan más limpios.
- * - Si hay muchos artículos, el usuario puede cerrar clientes que no está editando.
+ * - Ya no muestra $0 cuando el cliente sí tiene abonos.
  */
 export function OrderCustomerForm({
   customerOrder,
   customerIndex,
   customersCount,
   customerTotal,
+  customerPaidTotal,
+  customerPendingTotal,
   itemInputClassName = "",
   defaultExpanded = true,
   expandedCustomerLocalId = null,
@@ -141,29 +109,11 @@ export function OrderCustomerForm({
     expandedCustomerLocalId === customerOrder.localId || defaultExpanded,
   );
 
-  /**
-   * Abre automáticamente el cliente cuando su localId coincide
-   * con el último cliente agregado.
-   *
-   * Para qué sirve:
-   * - Si agregamos un cliente nuevo, lo mostramos abierto.
-   *
-   * Beneficio:
-   * - El usuario puede capturarlo inmediatamente.
-   */
   useEffect(() => {
     if (expandedCustomerLocalId === customerOrder.localId) {
       setIsExpanded(true);
     }
   }, [expandedCustomerLocalId, customerOrder.localId]);
-
-  const paymentSummary = getOrderPaymentSummary(
-    customerOrder.items.map((item) => ({
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      isPaid: item.isPaid,
-    })),
-  );
 
   return (
     <View className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -182,11 +132,11 @@ export function OrderCustomerForm({
           </Text>
 
           <Text className="mt-1 text-sm font-bold text-emerald-700">
-            Pagado: ${paymentSummary.paidTotal.toFixed(2)}
+            Pagado: ${customerPaidTotal.toFixed(2)}
           </Text>
 
           <Text className="mt-1 text-sm font-bold text-orange-600">
-            Pendiente: ${paymentSummary.pendingTotal.toFixed(2)}
+            Pendiente: ${customerPendingTotal.toFixed(2)}
           </Text>
 
           <Text className="mt-1 text-sm text-slate-500">

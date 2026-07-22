@@ -2,20 +2,17 @@ import { OrderStatusSelector } from "@/src/components/orders/OrderStatusSelector
 import { AppButton } from "@/src/components/ui/AppButton";
 import { AppCard } from "@/src/components/ui/AppCard";
 import { StatusBadge } from "@/src/components/ui/StatusBadge";
-import type { Order, OrderStatus } from "@/src/features/orders/order.types";
-import { getOrderPaymentSummary } from "@/src/features/orders/orderPayment.utils";
+import type {
+  CustomerOrder,
+  Order,
+  OrderStatus,
+} from "@/src/features/orders/order.types";
 import { router } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
 /**
  * Props del componente OrderSummaryCard.
- *
- * Para qué sirve:
- * - Define qué datos necesita la card para pintar un pedido.
- *
- * Beneficio:
- * - La pantalla orders.tsx ya no carga con todo el diseño del pedido.
  */
 type OrderSummaryCardProps = {
   order: Order;
@@ -24,37 +21,60 @@ type OrderSummaryCardProps = {
 };
 
 /**
- * Card resumen de pedido.
+ * Suma los abonos de un cliente dentro de un pedido.
  *
  * Para qué sirve:
- * - Muestra información principal del pedido.
- * - Permite abrir/cerrar el resumen de clientes.
- * - Permite cambiar estado rápido.
+ * - Calcula cuánto ha pagado realmente ese cliente.
  *
  * Beneficio:
- * - Si un pedido tiene muchos clientes o artículos, la pantalla no queda enorme.
+ * - Ya no dependemos de artículos marcados como pagados.
+ * - El resumen coincide con la sección de abonos.
+ */
+function getCustomerPaidTotal(customerOrder: CustomerOrder) {
+  return customerOrder.payments.reduce((total, payment) => {
+    return total + Number(payment.amount);
+  }, 0);
+}
+
+/**
+ * Calcula cuánto falta por pagar de un cliente.
+ */
+function getCustomerPendingTotal(customerOrder: CustomerOrder) {
+  const customerTotal = Number(customerOrder.total);
+  const paidTotal = getCustomerPaidTotal(customerOrder);
+
+  return Math.max(customerTotal - paidTotal, 0);
+}
+
+/**
+ * Suma todos los abonos de todos los clientes del pedido.
+ */
+function getOrderPaidTotal(order: Order) {
+  return order.customerOrders.reduce((orderPaidTotal, customerOrder) => {
+    return orderPaidTotal + getCustomerPaidTotal(customerOrder);
+  }, 0);
+}
+
+/**
+ * Card resumen de pedido.
+ *
+ * Nueva lógica:
+ * - Pagado = suma de abonos de todos los clientes.
+ * - Pendiente = total del pedido - abonos.
+ *
+ * Beneficio:
+ * - La tarjeta del pedido ahora coincide con la pantalla de detalle.
  */
 export function OrderSummaryCard({
   order,
   isUpdating,
   onUpdateStatus,
 }: OrderSummaryCardProps) {
-  /**
-   * Controla si mostramos u ocultamos los clientes del pedido.
-   *
-   * Para qué sirve:
-   * - Evita mostrar todo el detalle desde el inicio.
-   *
-   * Beneficio:
-   * - La lista de pedidos queda más limpia.
-   */
   const [showCustomers, setShowCustomers] = useState(false);
 
-  const allItems = order.customerOrders.flatMap(
-    (customerOrder) => customerOrder.items,
-  );
-
-  const orderPaymentSummary = getOrderPaymentSummary(allItems);
+  const orderTotal = Number(order.total);
+  const orderPaidTotal = getOrderPaidTotal(order);
+  const orderPendingTotal = Math.max(orderTotal - orderPaidTotal, 0);
 
   return (
     <AppCard>
@@ -69,11 +89,11 @@ export function OrderSummaryCard({
           </Text>
 
           <Text className="mt-1 text-sm font-bold text-emerald-700">
-            Pagado: ${orderPaymentSummary.paidTotal.toFixed(2)}
+            Pagado: ${orderPaidTotal.toFixed(2)}
           </Text>
 
           <Text className="mt-1 text-sm font-bold text-orange-600">
-            Pendiente: ${orderPaymentSummary.pendingTotal.toFixed(2)}
+            Pendiente: ${orderPendingTotal.toFixed(2)}
           </Text>
 
           <View className="mt-2">
@@ -82,7 +102,7 @@ export function OrderSummaryCard({
         </View>
 
         <Text className="text-lg font-extrabold text-emerald-700">
-          ${Number(order.total).toFixed(2)}
+          ${orderTotal.toFixed(2)}
         </Text>
       </View>
 
@@ -126,7 +146,9 @@ export function OrderSummaryCard({
       {showCustomers ? (
         <View className="mt-4 gap-3">
           {order.customerOrders.map((customerOrder) => {
-            const paymentSummary = getOrderPaymentSummary(customerOrder.items);
+            const customerTotal = Number(customerOrder.total);
+            const customerPaidTotal = getCustomerPaidTotal(customerOrder);
+            const customerPendingTotal = getCustomerPendingTotal(customerOrder);
 
             return (
               <View
@@ -145,25 +167,20 @@ export function OrderSummaryCard({
                   Artículos: {customerOrder.items.length}
                 </Text>
 
-                <Text className="mt-1 text-sm font-bold text-emerald-700">
-                  Pagados: {paymentSummary.paidItemsCount}/
-                  {paymentSummary.totalItems}
-                </Text>
-
-                <Text className="mt-1 text-sm font-bold text-orange-600">
-                  Pendientes: {paymentSummary.pendingItemsCount}
+                <Text className="mt-1 text-sm font-bold text-slate-700">
+                  Abonos registrados: {customerOrder.payments.length}
                 </Text>
 
                 <Text className="mt-1 text-sm font-bold text-emerald-700">
-                  Total pagado: ${paymentSummary.paidTotal.toFixed(2)}
+                  Total pagado: ${customerPaidTotal.toFixed(2)}
                 </Text>
 
                 <Text className="mt-1 text-sm font-bold text-orange-600">
-                  Total pendiente: ${paymentSummary.pendingTotal.toFixed(2)}
+                  Total pendiente: ${customerPendingTotal.toFixed(2)}
                 </Text>
 
                 <Text className="mt-1 text-sm font-bold text-slate-700">
-                  Total cliente: ${Number(customerOrder.total).toFixed(2)}
+                  Total cliente: ${customerTotal.toFixed(2)}
                 </Text>
               </View>
             );

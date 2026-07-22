@@ -621,6 +621,8 @@ export default function OrdersScreen() {
                     customerIndex={customerIndex}
                     customersCount={draftCustomers.length}
                     customerTotal={customerTotal}
+                    customerPaidTotal={0}
+                    customerPendingTotal={customerTotal}
                     expandedCustomerLocalId={expandedCustomerLocalId}
                     expandedItemLocalId={expandedItemLocalId}
                     onRemoveCustomer={handleRemoveCustomer}

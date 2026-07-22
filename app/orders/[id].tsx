@@ -356,6 +356,22 @@ export default function OrderDetailScreen() {
     return getOrderPaymentSummary(allItems);
   }, [draftCustomers]);
 
+  const orderAbonoSummary = useMemo(() => {
+    const paidTotal = draftCustomers.reduce((total, customerOrder) => {
+      return (
+        total + getCustomerPaidTotal(customerOrder, pendingOfflinePayments)
+      );
+    }, 0);
+
+    const pendingTotal = Math.max(draftTotal - paidTotal, 0);
+
+    return {
+      paidTotal,
+      pendingTotal,
+      isFullyPaid: paidTotal >= draftTotal && draftTotal > 0,
+    };
+  }, [draftCustomers, draftTotal, pendingOfflinePayments]);
+
   function handleAddCustomer() {
     const newCustomer = createEmptyCustomerOrder();
 
@@ -534,23 +550,40 @@ export default function OrderDetailScreen() {
     }
 
     const customersPayload: CreateOrderCustomerRequest[] = draftCustomers.map(
-      (customerOrder) => ({
-        name: customerOrder.name.trim(),
-        phone: customerOrder.phone.trim() || null,
-        notes: customerOrder.notes.trim() || null,
-        items: customerOrder.items.map((item) => ({
-          sku: item.sku.trim(),
-          name: item.name.trim(),
-          description: item.description?.trim() || null,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          isPaid: item.isPaid ?? false,
-        })),
-      }),
+      (customerOrder) => {
+        const customerTotal = getCustomerTotal(customerOrder);
+
+        const customerPaidTotal = getCustomerPaidTotal(
+          customerOrder,
+          pendingOfflinePayments,
+        );
+
+        const shouldMarkItemsAsPaid =
+          customerPaidTotal >= customerTotal && customerTotal > 0;
+
+        return {
+          name: customerOrder.name.trim(),
+          phone: customerOrder.phone.trim() || null,
+          notes: customerOrder.notes.trim() || null,
+          items: customerOrder.items.map((item) => ({
+            sku: item.sku.trim(),
+            name: item.name.trim(),
+            description: item.description?.trim() || null,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            isPaid: shouldMarkItemsAsPaid ? true : (item.isPaid ?? false),
+          })),
+        };
+      },
     );
 
+    const shouldMarkOrderAsPaid =
+      orderAbonoSummary.paidTotal >= draftTotal && draftTotal > 0;
+
+    const finalStatus: OrderStatus = shouldMarkOrderAsPaid ? "PAID" : status;
+
     const payload = {
-      status,
+      status: finalStatus,
       notes: orderNotes.trim() || null,
       deliveryDate: order?.deliveryDate ?? null,
       customers: customersPayload,
@@ -561,6 +594,8 @@ export default function OrderDetailScreen() {
         id: orderId,
         body: payload,
       }).unwrap();
+
+      setStatus(finalStatus);
 
       Alert.alert(
         "Pedido actualizado",
@@ -709,18 +744,25 @@ export default function OrderDetailScreen() {
 
             <View className="mt-4 rounded-2xl bg-white/10 p-4">
               <Text className="text-sm font-bold text-emerald-300">
-                Pagado por artículos: $
-                {draftPaymentSummary.paidTotal.toFixed(2)}
+                Pagado en abonos: ${orderAbonoSummary.paidTotal.toFixed(2)}
               </Text>
 
               <Text className="mt-1 text-sm font-bold text-orange-300">
-                Pendiente por artículos: $
-                {draftPaymentSummary.pendingTotal.toFixed(2)}
+                Pendiente por abonos: $
+                {orderAbonoSummary.pendingTotal.toFixed(2)}
               </Text>
 
               <Text className="mt-1 text-sm font-bold text-slate-200">
-                Artículos pagados: {draftPaymentSummary.paidItemsCount}/
-                {draftPaymentSummary.totalItems}
+                Estado de pago:{" "}
+                {orderAbonoSummary.isFullyPaid
+                  ? "Pagado"
+                  : orderAbonoSummary.paidTotal > 0
+                    ? "Abonado"
+                    : "Sin pagos"}
+              </Text>
+
+              <Text className="mt-1 text-sm font-bold text-slate-200">
+                Artículos: {draftPaymentSummary.totalItems}
               </Text>
 
               <Text className="mt-1 text-sm font-bold text-slate-200">
@@ -774,6 +816,8 @@ export default function OrderDetailScreen() {
                   customerIndex={customerIndex}
                   customersCount={draftCustomers.length}
                   customerTotal={customerTotal}
+                  customerPaidTotal={customerPaidTotal}
+                  customerPendingTotal={customerPendingTotal}
                   itemInputClassName="bg-white"
                   defaultExpanded={customerIndex === 0}
                   expandedCustomerLocalId={expandedCustomerLocalId}
