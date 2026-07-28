@@ -22,6 +22,7 @@ import {
   addSyncQueueItem,
   getPendingSyncQueueItems,
 } from "@/src/features/sync/syncQueue.service";
+import { useNetworkStatus } from "@/src/features/sync/useNetworkStatus";
 import {
   useCreateCustomerOrderPaymentMutation,
   useGetOrderByIdQuery,
@@ -180,6 +181,7 @@ export default function OrderDetailScreen() {
   }>();
 
   const orderId = Number(id);
+  const { isOnline } = useNetworkStatus();
 
   const {
     data: orderData,
@@ -225,7 +227,7 @@ export default function OrderDetailScreen() {
     PendingOfflinePayment[]
   >([]);
 
-  const isShowingOfflineOrder = Boolean(error && cachedOrder);
+  const isShowingOfflineOrder = Boolean(!isOnline && cachedOrder);
 
   const order = orderData?.data ?? cachedOrder;
 
@@ -275,7 +277,11 @@ export default function OrderDetailScreen() {
   useFocusEffect(
     useCallback(() => {
       loadPendingOfflinePayments();
-    }, [loadPendingOfflinePayments]),
+
+      if (isOnline && orderId) {
+        refetch();
+      }
+    }, [isOnline, orderId, refetch, loadPendingOfflinePayments]),
   );
 
   useEffect(() => {
