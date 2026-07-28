@@ -46,27 +46,11 @@ type DraftOrderItem = CreateOrderItemRequest & {
 
 type DraftCustomerOrder = {
   localId: string;
-
-  /**
-   * ID real de CustomerOrder en backend.
-   *
-   * Para qué sirve:
-   * - Permite registrar abonos para ese cliente específico.
-   *
-   * Beneficio:
-   * - El pago ya no se guarda en el pedido general.
-   * - Se guarda en el cliente correcto dentro del pedido.
-   */
   customerOrderId?: number;
-
   name: string;
   phone: string;
   notes: string;
   items: DraftOrderItem[];
-
-  /**
-   * Abonos guardados en backend para este cliente dentro del pedido.
-   */
   payments: CustomerOrderPayment[];
 };
 
@@ -448,7 +432,7 @@ export default function OrderDetailScreen() {
   function handleRemoveItem(customerLocalId: string, itemLocalId: string) {
     Alert.alert(
       "Quitar artículo",
-      "¿Seguro que quieres quitar este artículo del pedido?",
+      "¿Seguro que quieres quitar este artículo?",
       [
         {
           text: "Cancelar",
@@ -586,7 +570,12 @@ export default function OrderDetailScreen() {
     const shouldMarkOrderAsPaid =
       orderAbonoSummary.paidTotal >= draftTotal && draftTotal > 0;
 
-    const finalStatus: OrderStatus = shouldMarkOrderAsPaid ? "PAID" : status;
+    const finalStatus: OrderStatus =
+      status === "CANCELLED"
+        ? "CANCELLED"
+        : shouldMarkOrderAsPaid
+          ? "PAID"
+          : "PENDING";
 
     const payload = {
       status: finalStatus,
@@ -633,10 +622,39 @@ export default function OrderDetailScreen() {
       return;
     }
 
+    const customerTotal = getCustomerTotal(customerOrder);
+
+    const customerPaidTotal = getCustomerPaidTotal(
+      customerOrder,
+      pendingOfflinePayments,
+    );
+
+    if (customerPaidTotal >= customerTotal && customerTotal > 0) {
+      Alert.alert(
+        "Cliente pagado",
+        "Este cliente ya cubrió el total de su pedido.",
+      );
+
+      return;
+    }
+
     const amount = parseNumber(paymentAmount);
 
     if (amount <= 0) {
       Alert.alert("Monto inválido", "El monto debe ser mayor a cero.");
+      return;
+    }
+
+    const pendingAmount = Math.max(customerTotal - customerPaidTotal, 0);
+
+    if (amount > pendingAmount) {
+      Alert.alert(
+        "Abono mayor al pendiente",
+        `Este cliente solo tiene pendiente $${pendingAmount.toFixed(
+          2,
+        )}. Ajusta el monto antes de guardar.`,
+      );
+
       return;
     }
 
@@ -803,6 +821,7 @@ export default function OrderDetailScreen() {
               customerTotal - customerPaidTotal,
               0,
             );
+
             const isCustomerFullyPaid =
               customerPaidTotal >= customerTotal && customerTotal > 0;
 
@@ -942,16 +961,30 @@ export default function OrderDetailScreen() {
                     </View>
                   ) : null}
 
-                  <AppButton
-                    title={
-                      isPaymentFormOpen ? "Cancelar abono" : "Registrar abono"
-                    }
-                    variant={isPaymentFormOpen ? "outline" : "success"}
-                    className="mt-5 py-4"
-                    onPress={() => handleOpenPaymentForm(customerOrder.localId)}
-                  />
+                  {isCustomerFullyPaid ? (
+                    <View className="mt-5 rounded-2xl bg-emerald-100 px-4 py-4">
+                      <Text className="text-center font-extrabold text-emerald-700">
+                        Cliente pagado
+                      </Text>
 
-                  {isPaymentFormOpen ? (
+                      <Text className="mt-1 text-center text-sm text-emerald-700">
+                        Este cliente ya cubrió el total de su pedido.
+                      </Text>
+                    </View>
+                  ) : (
+                    <AppButton
+                      title={
+                        isPaymentFormOpen ? "Cancelar abono" : "Registrar abono"
+                      }
+                      variant={isPaymentFormOpen ? "outline" : "success"}
+                      className="mt-5 py-4"
+                      onPress={() =>
+                        handleOpenPaymentForm(customerOrder.localId)
+                      }
+                    />
+                  )}
+
+                  {isPaymentFormOpen && !isCustomerFullyPaid ? (
                     <View className="mt-5 rounded-2xl bg-white/80 p-4">
                       <AppInput
                         label="Monto del abono"
