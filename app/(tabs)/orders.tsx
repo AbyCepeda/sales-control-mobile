@@ -50,6 +50,19 @@ function normalizeSearchText(value: string) {
   return value.trim().toLowerCase();
 }
 
+type OrderStatusFilter = OrderStatus | "ALL";
+
+const STATUS_FILTER_OPTIONS: {
+  label: string;
+  value: OrderStatusFilter;
+}[] = [
+  { label: "Todos", value: "ALL" },
+  { label: "Pendientes", value: "PENDING" },
+  { label: "Pagados", value: "PAID" },
+  { label: "Entregados", value: "DELIVERED" },
+  { label: "Cancelados", value: "CANCELLED" },
+];
+
 type PendingOfflineOrder = {
   id: number;
   notes: string | null;
@@ -118,7 +131,7 @@ export default function OrdersScreen() {
   const [orderNotes, setOrderNotes] = useState("");
   const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
   const [searchText, setSearchText] = useState("");
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
+  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>("ALL");
 
   const [expandedItemLocalId, setExpandedItemLocalId] = useState<string | null>(
     null,
@@ -253,6 +266,28 @@ export default function OrdersScreen() {
       await loadPendingOfflineOrders();
     },
   });
+
+  const orderStatusCounts = useMemo(() => {
+    const counts: Record<OrderStatusFilter, number> = {
+      ALL: orders.length,
+      PENDING: 0,
+      PAID: 0,
+      DELIVERED: 0,
+      CANCELLED: 0,
+    };
+
+    for (const order of orders) {
+      counts[order.status] += 1;
+    }
+
+    return counts;
+  }, [orders]);
+
+  const activeStatusFilterLabel =
+    STATUS_FILTER_OPTIONS.find((option) => option.value === statusFilter)
+      ?.label ?? "Todos";
+
+  const hasActiveFilters = Boolean(searchText.trim() || statusFilter !== "ALL");
 
   const filteredOrders = useMemo(() => {
     const normalizedSearch = normalizeSearchText(searchText);
@@ -680,19 +715,14 @@ export default function OrdersScreen() {
           </Text>
 
           <View className="mt-3 flex-row flex-wrap gap-2">
-            {[
-              { label: "Todos", value: "ALL" as const },
-              { label: "Pendientes", value: "PENDING" as const },
-              { label: "Pagados", value: "PAID" as const },
-              { label: "Entregados", value: "DELIVERED" as const },
-              { label: "Cancelados", value: "CANCELLED" as const },
-            ].map((option) => {
+            {STATUS_FILTER_OPTIONS.map((option) => {
               const isSelected = statusFilter === option.value;
+              const count = orderStatusCounts[option.value];
 
               return (
                 <AppButton
                   key={option.value}
-                  title={option.label}
+                  title={`${option.label} (${count})`}
                   variant={isSelected ? "primary" : "outline"}
                   className="px-3 py-2"
                   textClassName="text-xs"
@@ -703,8 +733,21 @@ export default function OrdersScreen() {
           </View>
 
           <Text className="mt-4 text-sm text-slate-500">
-            Mostrando {filteredOrders.length} de {orders.length} pedidos.
+            Mostrando {filteredOrders.length} de {orders.length} pedidos. Filtro
+            activo: {activeStatusFilterLabel}.
           </Text>
+
+          {hasActiveFilters ? (
+            <AppButton
+              title="Limpiar filtros"
+              variant="outline"
+              className="mt-4 py-3"
+              onPress={() => {
+                setSearchText("");
+                setStatusFilter("ALL");
+              }}
+            />
+          ) : null}
         </AppCard>
 
         {pendingOfflineCount > 0 ? (
@@ -923,7 +966,7 @@ export default function OrdersScreen() {
               <AppCard>
                 <Text className="text-center text-slate-500">
                   {orders.length
-                    ? "No hay pedidos que coincidan con la búsqueda."
+                    ? "No hay pedidos que coincidan con la búsqueda o filtro seleccionado."
                     : "Todavía no hay pedidos registrados."}
                 </Text>
               </AppCard>
