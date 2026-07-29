@@ -1,12 +1,5 @@
 export type OrderStatus = "PENDING" | "PAID" | "DELIVERED" | "CANCELLED";
 
-/**
- * Cliente dentro de un pedido reciente.
- *
- * Nueva estructura:
- * - Un pedido puede tener varios clientes.
- * - Por eso ya no usamos order.customer directo.
- */
 export type DashboardCustomer = {
   id: number;
   name: string;
@@ -17,24 +10,7 @@ export type DashboardCustomer = {
   updatedAt: string;
 };
 
-/**
- * Vendedor que registró el pedido.
- */
-export type DashboardSeller = {
-  id: number;
-  name: string;
-  email: string;
-  role?: "ADMIN" | "SELLER";
-};
-
-/**
- * Artículo dentro de un cliente del pedido.
- *
- * Para qué sirve:
- * - Permite contar artículos y mostrar información si después queremos
- *   hacer el dashboard más detallado.
- */
-export type DashboardRecentOrderItem = {
+export type DashboardOrderItem = {
   id: number;
   customerOrderId: number;
   productId: number | null;
@@ -44,16 +20,20 @@ export type DashboardRecentOrderItem = {
   unitPriceSnapshot: string;
   quantity: number;
   subtotal: string;
+  isPaid: boolean;
 };
 
-/**
- * Cliente agrupado dentro del pedido.
- *
- * Nueva lógica:
- * - Antes era order.customer.
- * - Ahora es order.customerOrders[] porque un pedido puede tener varios clientes.
- */
-export type DashboardRecentCustomerOrder = {
+export type DashboardCustomerOrderPayment = {
+  id: number;
+  customerOrderId: number;
+  amount: string;
+  method: "CASH" | "TRANSFER" | "CARD" | "OTHER";
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DashboardCustomerOrder = {
   id: number;
   orderId: number;
   customerId: number;
@@ -62,15 +42,10 @@ export type DashboardRecentCustomerOrder = {
   createdAt: string;
   updatedAt: string;
   customer: DashboardCustomer;
-  items: DashboardRecentOrderItem[];
+  items: DashboardOrderItem[];
+  payments: DashboardCustomerOrderPayment[];
 };
 
-/**
- * Pedido reciente del dashboard.
- *
- * Nueva estructura:
- * - customerOrders reemplaza a customer directo.
- */
 export type DashboardRecentOrder = {
   id: number;
   sellerId: number;
@@ -81,17 +56,21 @@ export type DashboardRecentOrder = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
-  seller: DashboardSeller;
-  customerOrders: DashboardRecentCustomerOrder[];
+  customerOrders: DashboardCustomerOrder[];
 };
 
-export type DashboardSummary = {
+export type DashboardResponse = {
   totalOrders: number;
   pendingOrders: number;
   paidOrders: number;
   deliveredOrders: number;
   cancelledOrders: number;
+
   totalRevenue: string;
+  totalPaid: string;
+  totalPending: string;
+  todayPayments: string;
+
   activeCustomers: number;
   activeProducts: number;
   recentOrders: DashboardRecentOrder[];

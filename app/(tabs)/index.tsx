@@ -10,18 +10,12 @@ import { router } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   View,
 } from "react-native";
 
-/**
- * Convierte el status técnico del backend a texto entendible.
- *
- * Beneficio:
- * - Evita mostrar valores técnicos como PENDING o DELIVERED.
- * - Mejora la lectura para el usuario final.
- */
 function getStatusLabel(status: OrderStatus): string {
   const labels: Record<OrderStatus, string> = {
     PENDING: "Pendiente",
@@ -33,13 +27,65 @@ function getStatusLabel(status: OrderStatus): string {
   return labels[status];
 }
 
-/**
- * Tarjeta reutilizable para navegar desde el Dashboard.
- *
- * Beneficio:
- * - Evita repetir diseño.
- * - Hace más fácil agregar más opciones después.
- */
+function formatMoney(value?: string | number | null) {
+  const amount = Number(value ?? 0);
+
+  return `$${amount.toFixed(2)}`;
+}
+
+function DashboardMetricCard({
+  title,
+  value,
+  description,
+  variant = "default",
+}: {
+  title: string;
+  value: string;
+  description?: string;
+  variant?: "default" | "success" | "warning" | "danger" | "dark";
+}) {
+  const variantClassName = {
+    default: "bg-white",
+    success: "bg-emerald-50 border border-emerald-200",
+    warning: "bg-orange-50 border border-orange-200",
+    danger: "bg-red-50 border border-red-200",
+    dark: "bg-slate-950",
+  }[variant];
+
+  const titleClassName =
+    variant === "dark" ? "text-slate-400" : "text-slate-500";
+
+  const valueClassName =
+    variant === "dark"
+      ? "text-white"
+      : variant === "success"
+        ? "text-emerald-700"
+        : variant === "warning"
+          ? "text-orange-600"
+          : variant === "danger"
+            ? "text-red-600"
+            : "text-slate-950";
+
+  const descriptionClassName =
+    variant === "dark" ? "text-slate-400" : "text-slate-500";
+
+  return (
+    <View className={`rounded-3xl p-5 shadow-sm ${variantClassName}`}>
+      <Text className={`text-sm font-semibold ${titleClassName}`}>{title}</Text>
+
+      <Text className={`mt-2 text-3xl font-extrabold ${valueClassName}`}>
+        {value}
+      </Text>
+
+      {description ? (
+        <Text className={`mt-2 text-xs ${descriptionClassName}`}>
+          {description}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function DashboardMenuCard({
   title,
   description,
@@ -75,14 +121,6 @@ function DashboardMenuCard({
   );
 }
 
-/**
- * Dashboard principal.
- *
- * Beneficio:
- * - Muestra resumen real del backend.
- * - Agrega menú de navegación rápida.
- * - Permite entrar a módulos sin depender solo de las tabs.
- */
 export default function DashboardScreen() {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.auth.user);
@@ -104,7 +142,12 @@ export default function DashboardScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-slate-100">
+    <ScrollView
+      className="flex-1 bg-slate-100"
+      refreshControl={
+        <RefreshControl refreshing={isFetching} onRefresh={refetch} />
+      }
+    >
       <View className="px-5 pb-10 pt-16">
         <View className="flex-row items-start justify-between gap-4">
           <View className="flex-1">
@@ -151,61 +194,74 @@ export default function DashboardScreen() {
           </View>
         ) : (
           <>
-            <View className="mt-6 rounded-3xl bg-slate-950 p-5">
-              <Text className="text-sm font-semibold text-slate-400">
-                Ingresos registrados
-              </Text>
+            <View className="mt-6">
+              <DashboardMetricCard
+                title="Total vendido"
+                value={formatMoney(dashboard?.totalRevenue)}
+                description="No incluye pedidos cancelados"
+                variant="dark"
+              />
+            </View>
 
-              <Text className="mt-2 text-4xl font-extrabold text-white">
-                ${dashboard?.totalRevenue ?? "0.00"}
-              </Text>
+            <View className="mt-5 gap-3">
+              <View className="flex-row gap-3">
+                <View className="flex-1">
+                  <DashboardMetricCard
+                    title="Total pagado"
+                    value={formatMoney(dashboard?.totalPaid)}
+                    description="Abonos registrados"
+                    variant="success"
+                  />
+                </View>
 
-              <Text className="mt-2 text-sm text-slate-400">
-                No incluye pedidos cancelados
-              </Text>
+                <View className="flex-1">
+                  <DashboardMetricCard
+                    title="Pendiente"
+                    value={formatMoney(dashboard?.totalPending)}
+                    description="Por cobrar"
+                    variant="warning"
+                  />
+                </View>
+              </View>
+
+              <DashboardMetricCard
+                title="Pagos de hoy"
+                value={formatMoney(dashboard?.todayPayments)}
+                description="Abonos registrados durante el día"
+                variant="default"
+              />
             </View>
 
             <View className="mt-5 flex-row gap-3">
-              <View className="flex-1 rounded-3xl bg-white p-5">
-                <Text className="text-sm font-semibold text-slate-500">
-                  Pedidos
-                </Text>
-
-                <Text className="mt-2 text-3xl font-extrabold text-slate-950">
-                  {dashboard?.totalOrders ?? 0}
-                </Text>
+              <View className="flex-1">
+                <DashboardMetricCard
+                  title="Pedidos"
+                  value={`${dashboard?.totalOrders ?? 0}`}
+                />
               </View>
 
-              <View className="flex-1 rounded-3xl bg-white p-5">
-                <Text className="text-sm font-semibold text-slate-500">
-                  Clientes
-                </Text>
-
-                <Text className="mt-2 text-3xl font-extrabold text-slate-950">
-                  {dashboard?.activeCustomers ?? 0}
-                </Text>
+              <View className="flex-1">
+                <DashboardMetricCard
+                  title="Clientes"
+                  value={`${dashboard?.activeCustomers ?? 0}`}
+                />
               </View>
             </View>
 
             <View className="mt-3 flex-row gap-3">
-              <View className="flex-1 rounded-3xl bg-white p-5">
-                <Text className="text-sm font-semibold text-slate-500">
-                  Productos
-                </Text>
-
-                <Text className="mt-2 text-3xl font-extrabold text-slate-950">
-                  {dashboard?.activeProducts ?? 0}
-                </Text>
+              <View className="flex-1">
+                <DashboardMetricCard
+                  title="Productos"
+                  value={`${dashboard?.activeProducts ?? 0}`}
+                />
               </View>
 
-              <View className="flex-1 rounded-3xl bg-white p-5">
-                <Text className="text-sm font-semibold text-slate-500">
-                  Pendientes
-                </Text>
-
-                <Text className="mt-2 text-3xl font-extrabold text-orange-500">
-                  {dashboard?.pendingOrders ?? 0}
-                </Text>
+              <View className="flex-1">
+                <DashboardMetricCard
+                  title="Pendientes"
+                  value={`${dashboard?.pendingOrders ?? 0}`}
+                  variant="warning"
+                />
               </View>
             </View>
 
@@ -246,8 +302,8 @@ export default function DashboardScreen() {
 
                 <DashboardMenuCard
                   title="Nuevo pedido"
-                  description="Registra una venta seleccionando cliente y productos."
-                  badge="Pronto"
+                  description="Registra una venta capturando clientes y artículos."
+                  badge="+"
                   onPress={() => router.push("/(tabs)/orders")}
                 />
               </View>
@@ -260,8 +316,15 @@ export default function DashboardScreen() {
 
               <View className="mt-4 gap-3">
                 <View className="flex-row justify-between">
+                  <Text className="text-slate-500">Pendientes</Text>
+                  <Text className="font-bold text-orange-600">
+                    {dashboard?.pendingOrders ?? 0}
+                  </Text>
+                </View>
+
+                <View className="flex-row justify-between">
                   <Text className="text-slate-500">Pagados</Text>
-                  <Text className="font-bold text-slate-950">
+                  <Text className="font-bold text-emerald-700">
                     {dashboard?.paidOrders ?? 0}
                   </Text>
                 </View>
@@ -275,7 +338,7 @@ export default function DashboardScreen() {
 
                 <View className="flex-row justify-between">
                   <Text className="text-slate-500">Cancelados</Text>
-                  <Text className="font-bold text-slate-950">
+                  <Text className="font-bold text-red-600">
                     {dashboard?.cancelledOrders ?? 0}
                   </Text>
                 </View>
@@ -289,35 +352,48 @@ export default function DashboardScreen() {
 
               {dashboard?.recentOrders?.length ? (
                 <View className="mt-4 gap-3">
-                  {dashboard.recentOrders.map((order: DashboardRecentOrder) => (
-                    <View
-                      key={order.id}
-                      className="rounded-2xl border border-slate-200 p-4"
-                    >
-                      <View className="flex-row items-start justify-between gap-3">
-                        <View className="flex-1">
-                          <Text className="font-bold text-slate-950">
-                            Pedido #{order.id}
-                          </Text>
+                  {dashboard.recentOrders.map((order: DashboardRecentOrder) => {
+                    const customerNames = order.customerOrders
+                      .map((customerOrder) => customerOrder.customer.name)
+                      .join(", ");
 
-                          <Text className="mt-1 text-sm text-slate-500">
-                            {order.customerOrders?.[0]?.customer?.name ??
-                              "Sin cliente"}
+                    return (
+                      <Pressable
+                        key={order.id}
+                        className="rounded-2xl border border-slate-200 p-4 active:opacity-80"
+                        onPress={() =>
+                          router.push({
+                            pathname: "/orders/[id]" as any,
+                            params: {
+                              id: String(order.id),
+                            },
+                          })
+                        }
+                      >
+                        <View className="flex-row items-start justify-between gap-3">
+                          <View className="flex-1">
+                            <Text className="font-bold text-slate-950">
+                              Pedido #{order.id}
+                            </Text>
+
+                            <Text className="mt-1 text-sm text-slate-500">
+                              {customerNames || "Sin cliente"}
+                            </Text>
+                          </View>
+
+                          <Text className="font-extrabold text-slate-950">
+                            {formatMoney(order.total)}
                           </Text>
                         </View>
 
-                        <Text className="font-extrabold text-slate-950">
-                          ${order.total}
-                        </Text>
-                      </View>
-
-                      <View className="mt-3 self-start rounded-full bg-slate-100 px-3 py-1">
-                        <Text className="text-xs font-bold text-slate-700">
-                          {getStatusLabel(order.status)}
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
+                        <View className="mt-3 self-start rounded-full bg-slate-100 px-3 py-1">
+                          <Text className="text-xs font-bold text-slate-700">
+                            {getStatusLabel(order.status)}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               ) : (
                 <Text className="mt-4 text-slate-500">
