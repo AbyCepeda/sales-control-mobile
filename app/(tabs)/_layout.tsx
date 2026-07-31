@@ -1,3 +1,4 @@
+import { useAppSelector } from "@/src/store/hooks";
 import { Tabs } from "expo-router";
 
 /**
@@ -5,10 +6,12 @@ import { Tabs } from "expo-router";
  *
  * Beneficio:
  * - Define las pantallas visibles en la navegación inferior.
- * - Elimina la tab "explore" que venía en la plantilla de Expo.
- * - Deja navegación clara para Dashboard, Productos, Clientes y Pedidos.
+ * - Oculta Usuarios si el usuario no es ADMIN.
  */
 export default function TabLayout() {
+  const user = useAppSelector((state) => state.auth.user);
+  const isAdmin = user?.role === "ADMIN";
+
   return (
     <Tabs
       screenOptions={{
@@ -53,6 +56,14 @@ export default function TabLayout() {
         name="orders"
         options={{
           title: "Pedidos",
+        }}
+      />
+
+      <Tabs.Screen
+        name="users"
+        options={{
+          title: "Usuarios",
+          href: isAdmin ? undefined : null,
         }}
       />
     </Tabs>

@@ -82,7 +82,7 @@ export const api = createApi({
    * - Permite refrescar listas automáticamente
    *   al crear productos, clientes o pedidos.
    */
-  tagTypes: ["Auth", "Dashboard", "Products", "Customers", "Orders"],
+  tagTypes: ["Auth", "Dashboard", "Products", "Customers", "Orders", "Users"],
 
   endpoints: () => ({}),
 });
