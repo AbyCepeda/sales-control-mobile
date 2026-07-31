@@ -25,6 +25,7 @@ import {
 import { useNetworkStatus } from "@/src/features/sync/useNetworkStatus";
 import {
   useCreateCustomerOrderPaymentMutation,
+  useDeleteCustomerOrderPaymentMutation,
   useGetOrderByIdQuery,
   useUpdateFullOrderMutation,
 } from "@/src/services/ordersApi";
@@ -182,6 +183,9 @@ export default function OrderDetailScreen() {
   const [createCustomerOrderPayment, { isLoading: isCreatingPayment }] =
     useCreateCustomerOrderPaymentMutation();
 
+  const [deleteCustomerOrderPayment, { isLoading: isDeletingPayment }] =
+    useDeleteCustomerOrderPaymentMutation();
+
   const [status, setStatus] = useState<OrderStatus>("PENDING");
   const [orderNotes, setOrderNotes] = useState("");
 
@@ -211,9 +215,14 @@ export default function OrderDetailScreen() {
     PendingOfflinePayment[]
   >([]);
 
+  const [deletingPaymentId, setDeletingPaymentId] = useState<number | null>(
+    null,
+  );
+
   const isShowingOfflineOrder = Boolean(!isOnline && cachedOrder);
 
   const order = orderData?.data ?? cachedOrder;
+  const isOrderCancelled = status === "CANCELLED";
 
   const customerOrderIds = useMemo(() => {
     return draftCustomers
@@ -696,6 +705,59 @@ export default function OrderDetailScreen() {
     }
   }
 
+  function handleConfirmDeletePayment(paymentId: number) {
+    if (isOrderCancelled) {
+      Alert.alert(
+        "Pedido cancelado",
+        "No puedes eliminar abonos de un pedido cancelado.",
+      );
+
+      return;
+    }
+
+    Alert.alert(
+      "Eliminar abono",
+      "¿Seguro que quieres eliminar este abono? Esta acción recalculará el estado del pedido.",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel",
+        },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: () => handleDeletePayment(paymentId),
+        },
+      ],
+    );
+  }
+
+  async function handleDeletePayment(paymentId: number) {
+    try {
+      setDeletingPaymentId(paymentId);
+
+      await deleteCustomerOrderPayment(paymentId).unwrap();
+
+      await refetch();
+      await loadPendingOfflinePayments();
+
+      Alert.alert("Abono eliminado", "El abono se eliminó correctamente.");
+    } catch (deletePaymentError: any) {
+      console.log(
+        "DELETE_CUSTOMER_ORDER_PAYMENT_ERROR:",
+        JSON.stringify(deletePaymentError, null, 2),
+      );
+
+      Alert.alert(
+        "No se pudo eliminar",
+        deletePaymentError?.data?.message ??
+          "Revisa tu conexión o intenta nuevamente.",
+      );
+    } finally {
+      setDeletingPaymentId(null);
+    }
+  }
+
   if (isLoading && !cachedOrder) {
     return (
       <View className="flex-1 items-center justify-center bg-slate-100">
@@ -954,6 +1016,22 @@ export default function OrderDetailScreen() {
                               <Text className="mt-1 text-sm text-slate-500">
                                 {payment.notes}
                               </Text>
+                            ) : null}
+
+                            {!isOrderCancelled ? (
+                              <AppButton
+                                title="Eliminar abono"
+                                variant="outline"
+                                className="mt-3 py-3"
+                                textClassName="text-xs text-red-600"
+                                onPress={() =>
+                                  handleConfirmDeletePayment(payment.id)
+                                }
+                                isLoading={
+                                  isDeletingPayment &&
+                                  deletingPaymentId === payment.id
+                                }
+                              />
                             ) : null}
                           </View>
                         ))}

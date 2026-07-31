@@ -22,10 +22,12 @@ import { api } from "./api";
  * Nueva lógica de pagos:
  * - POST /api/customer-orders/:customerOrderId/payments
  * - GET /api/customer-orders/:customerOrderId/payments/summary
+ * - DELETE /api/customer-order-payments/:paymentId
  *
  * Beneficio:
  * - Los abonos se registran por cliente dentro del pedido.
  * - Ya no se mezclan pagos de diferentes clientes.
+ * - Si un abono se capturó mal, se puede eliminar.
  */
 export const ordersApi = api.injectEndpoints({
   endpoints: (builder) => ({
@@ -117,6 +119,29 @@ export const ordersApi = api.injectEndpoints({
     }),
 
     /**
+     * Elimina un abono registrado.
+     *
+     * Para qué sirve:
+     * - Corrige pagos capturados por error.
+     *
+     * Beneficio:
+     * - El backend recalcula el estado del cliente y del pedido.
+     */
+    deleteCustomerOrderPayment: builder.mutation<ApiResponse<Order>, number>({
+      query: (paymentId) => ({
+        url: `/customer-order-payments/${paymentId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (result) => {
+        const orderId = result?.data?.id;
+
+        return orderId
+          ? ["Orders", { type: "Orders", id: orderId }, "Dashboard"]
+          : ["Orders", "Dashboard"];
+      },
+    }),
+
+    /**
      * Obtiene resumen de pagos de un cliente dentro del pedido.
      */
     getCustomerOrderPaymentSummary: builder.query<
@@ -141,5 +166,6 @@ export const {
   useUpdateOrderMutation,
   useUpdateFullOrderMutation,
   useCreateCustomerOrderPaymentMutation,
+  useDeleteCustomerOrderPaymentMutation,
   useGetCustomerOrderPaymentSummaryQuery,
 } = ordersApi;
