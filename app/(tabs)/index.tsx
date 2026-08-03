@@ -3,6 +3,7 @@ import type {
   DashboardRecentOrder,
   OrderStatus,
 } from "@/src/features/dashboard/dashboard.types";
+import { api } from "@/src/services/api";
 import { useGetDashboardQuery } from "@/src/services/dashboardApi";
 import { useAppDispatch, useAppSelector } from "@/src/store/hooks";
 import { removeToken } from "@/src/utils/tokenStorage";
@@ -137,6 +138,7 @@ export default function DashboardScreen() {
 
   async function handleLogout() {
     await removeToken();
+    dispatch(api.util.resetApiState());
     dispatch(logout());
     router.replace("/login");
   }

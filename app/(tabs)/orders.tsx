@@ -34,6 +34,7 @@ import {
   useGetOrdersQuery,
   useUpdateOrderMutation,
 } from "@/src/services/ordersApi";
+import { useAppSelector } from "@/src/store/hooks";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -114,12 +115,16 @@ function showOfflineOrderToast() {
 }
 
 export default function OrdersScreen() {
+  const authUser = useAppSelector((state) => state.auth.user);
+
   const {
     data: ordersData,
     isLoading: isLoadingOrders,
     error: ordersError,
     refetch,
-  } = useGetOrdersQuery();
+  } = useGetOrdersQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+  });
 
   const [createOrder, { isLoading: isCreatingOrder }] =
     useCreateOrderMutation();
@@ -163,6 +168,25 @@ export default function OrdersScreen() {
   const orders = ordersData?.data ?? cachedOrdersData?.data ?? [];
 
   const { isOnline } = useNetworkStatus();
+
+  /**
+   * Cuando cambia el usuario autenticado, limpiamos la caché visual
+   * de esta pantalla y pedimos de nuevo los pedidos.
+   *
+   * Para qué sirve:
+   * - Evita que un SELLER vea pedidos que quedaron en memoria del ADMIN.
+   *
+   * Beneficio:
+   * - ADMIN ve todos.
+   * - SELLER ve solo los suyos.
+   */
+  useEffect(() => {
+    setCachedOrdersData(null);
+
+    if (authUser?.id) {
+      refetch();
+    }
+  }, [authUser?.id, refetch]);
 
   const loadPendingOfflineOrders = useCallback(async () => {
     try {
@@ -884,8 +908,8 @@ export default function OrdersScreen() {
                   </Text>
 
                   <Text className="mt-1 text-sm text-amber-700">
-                    Este pedido está guardado en este dispositivo, pero todavía
-                    no se ha sincronizado con Neon.
+                    Este pedido se creó sin conexión y aún no está en el
+                    servidor.
                   </Text>
 
                   <View className="mt-4 rounded-2xl bg-white/70 p-4">
@@ -915,8 +939,7 @@ export default function OrdersScreen() {
                   </View>
 
                   <Text className="mt-4 text-xs text-amber-700">
-                    Presiona “Sincronizar” cuando tengas conexión para subirlo
-                    al servidor.
+                    Presiona “Sincronizar” cuando tengas conexión para subirlo.
                   </Text>
                 </AppCard>
               );
@@ -925,53 +948,33 @@ export default function OrdersScreen() {
         ) : null}
 
         {isLoadingOrders ? (
-          <AppCard className="mt-8 items-center p-8">
+          <View className="mt-6 items-center rounded-3xl bg-white p-8">
             <ActivityIndicator />
-
             <Text className="mt-3 text-slate-500">Cargando pedidos...</Text>
-          </AppCard>
-        ) : ordersError && !cachedOrdersData ? (
-          <AppCard className="mt-8">
-            <Text className="text-xl font-extrabold text-red-600">
-              No se pudieron cargar los pedidos
-            </Text>
-
-            <Text className="mt-2 text-slate-500">
-              Revisa que el backend esté encendido y que tu sesión siga activa.
-            </Text>
-
-            <AppButton
-              title="Reintentar"
-              className="mt-5 py-4"
-              onPress={() => refetch()}
-            />
-          </AppCard>
-        ) : (
-          <View className="mt-6 gap-4">
-            {filteredOrders.length ? (
-              filteredOrders.map((order) => {
-                const isThisOrderUpdating =
-                  isUpdatingOrder && updatingOrderId === order.id;
-
-                return (
-                  <OrderSummaryCard
-                    key={order.id}
-                    order={order}
-                    isUpdating={isThisOrderUpdating}
-                    onUpdateStatus={handleUpdateOrderStatus}
-                  />
-                );
-              })
-            ) : (
-              <AppCard>
-                <Text className="text-center text-slate-500">
-                  {orders.length
-                    ? "No hay pedidos que coincidan con la búsqueda o filtro seleccionado."
-                    : "Todavía no hay pedidos registrados."}
-                </Text>
-              </AppCard>
-            )}
           </View>
+        ) : filteredOrders.length ? (
+          <View className="mt-6 gap-4">
+            {filteredOrders.map((order) => (
+              <OrderSummaryCard
+                key={order.id}
+                order={order}
+                isUpdating={updatingOrderId === order.id && isUpdatingOrder}
+                onUpdateStatus={handleUpdateOrderStatus}
+              />
+            ))}
+          </View>
+        ) : (
+          <AppCard className="mt-6">
+            <Text className="text-center text-base font-bold text-slate-600">
+              No hay pedidos para mostrar.
+            </Text>
+
+            <Text className="mt-2 text-center text-sm text-slate-500">
+              {hasActiveFilters
+                ? "Intenta limpiar los filtros o buscar otro cliente."
+                : "Cuando registres pedidos aparecerán aquí."}
+            </Text>
+          </AppCard>
         )}
       </View>
     </ScrollView>
